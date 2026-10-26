@@ -13,7 +13,7 @@ protocol BrowserToolbarDelegate: AnyObject {
 final class BrowserToolbar: UIView {
   weak var browserDelegate: BrowserToolbarDelegate?
 
-  private let blurView = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+  private let blurView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
   private let buttonStack = UIStackView()
   private var iconButtons: [UIButton] = []
 
@@ -85,12 +85,12 @@ final class BrowserToolbar: UIView {
   }
 
   private func updateStyle() {
-    layer.borderWidth = 0.6
+    layer.borderWidth = 0.8
     layer.borderColor = UIColor { traits in
-      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.12)
+      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.22)
     }.cgColor
     layer.shadowColor = UIColor.black.cgColor
-    layer.shadowOpacity = traitCollection.userInterfaceStyle == .dark ? 0.22 : 0.10
+    layer.shadowOpacity = traitCollection.userInterfaceStyle == .dark ? 0.28 : 0.14
     layer.shadowRadius = 16
     layer.shadowOffset = CGSize(width: 0, height: 5)
     iconButtons.forEach {

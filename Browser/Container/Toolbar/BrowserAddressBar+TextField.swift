@@ -20,6 +20,7 @@ extension BrowserAddressBar {
     private let magnifyingGlassImageView = UIImageView()
     private let aAButton = UIButton(type: .system)
     private let reloadButton = UIButton(type: .system)
+    var onReload: (() -> Void)?
     
     var activityState = State.inactive {
       didSet {
@@ -111,6 +112,7 @@ private extension BrowserAddressBar.TextField {
   
   func setupReloadButton() {
     reloadButton.setImage(UIImage(systemName: "arrow.clockwise")?.withRenderingMode(.alwaysTemplate), for: .normal)
+    reloadButton.addTarget(self, action: #selector(reloadTapped), for: .touchUpInside)
     reloadButton.imageView?.contentMode = .scaleAspectFit
     reloadButton.tintColor = UIColor { traits in traits.userInterfaceStyle == .dark ? .white : .black }
   }
@@ -119,4 +121,8 @@ private extension BrowserAddressBar.TextField {
     let attributes: [NSAttributedString.Key: Any] = [.foregroundColor: UIColor.textFieldGray]
     attributedPlaceholder = NSAttributedString(string: "Search or enter website", attributes: attributes)
   }
+}
+
+private extension BrowserAddressBar.TextField {
+  @objc func reloadTapped() { onReload?() }
 }

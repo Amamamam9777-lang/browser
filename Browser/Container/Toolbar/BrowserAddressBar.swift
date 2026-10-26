@@ -10,12 +10,14 @@ import SnapKit
 
 protocol BrowserAddressBarDelegate: AnyObject {
   func addressBarDidBeginEditing()
+  func addressBarDidTapReload()
   func addressBar(_ addressBar: BrowserAddressBar, didReturnWithText text: String)
 }
 
 class BrowserAddressBar: UIView {
   private let progressView = UIProgressView()
   private let shadowView = UIView()
+  private let glassView = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
   private var text: String?
   private let textFieldSidePadding = CGFloat(4)
   private var textFieldLeadingConstraint: Constraint?
@@ -63,9 +65,9 @@ private extension BrowserAddressBar {
     containerView.layer.cornerCurve = .continuous
     containerView.layer.borderWidth = 0.5
     containerView.layer.borderColor = UIColor { traits in
-      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.12)
+      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.22)
     }.cgColor
-    containerView.backgroundColor = UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(white: 0.12, alpha: 0.78) : UIColor(white: 1, alpha: 0.78) }
+    containerView.backgroundColor = .clear
     setupContainerView()
     setupShadowView()
     setupTextField()
@@ -75,6 +77,8 @@ private extension BrowserAddressBar {
   }
   
   func setupContainerView() {
+    containerView.addSubview(glassView)
+    glassView.snp.makeConstraints { $0.edges.equalToSuperview() }
     addSubview(containerView)
     containerView.snp.makeConstraints {
       $0.top.leading.bottom.equalToSuperview()
@@ -93,6 +97,7 @@ private extension BrowserAddressBar {
   
   func setupTextField() {
     textField.delegate = self
+    textField.onReload = { [weak self] in self?.delegate?.addressBarDidTapReload() }
     containerView.addSubview(textField)
     textField.snp.makeConstraints {
       $0.height.equalTo(46)
