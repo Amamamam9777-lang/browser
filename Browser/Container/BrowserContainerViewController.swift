@@ -70,6 +70,15 @@ class BrowserContainerViewController: UIViewController {
       self.contentView.cancelButton.alpha = isHidden ? 0 : 1
     }
   }
+
+  func openIncomingURL(_ url: URL) {
+    if !isViewLoaded { loadViewIfNeeded() }
+    if tabViewControllers.isEmpty { openNewTab(isHidden: false) }
+    let tab = tabViewControllers[currentTabIndex]
+    tab.loadWebsite(from: url)
+    currentAddressBar.domainLabel.text = viewModel.getDomain(from: url)
+    dismissKeyboard()
+  }
 }
 
 // MARK: Helper methods
