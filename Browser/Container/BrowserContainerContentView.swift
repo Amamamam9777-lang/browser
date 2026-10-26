@@ -60,7 +60,7 @@ class BrowserContainerContentView: UIView {
 // MARK: Helper methods
 private extension BrowserContainerContentView {
   func setupView() {
-    backgroundColor = UIColor(white: 0.97, alpha: 1)
+    backgroundColor = UIColor.systemBackground
     setupTabsScrollView()
     setupTabsStackView()
     setupToolbar()
