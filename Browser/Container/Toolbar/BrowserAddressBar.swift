@@ -17,7 +17,7 @@ protocol BrowserAddressBarDelegate: AnyObject {
 class BrowserAddressBar: UIView {
   private let progressView = UIProgressView()
   private let shadowView = UIView()
-  private let glassView = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+  private let glassView = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
   private var text: String?
   private let textFieldSidePadding = CGFloat(4)
   private var textFieldLeadingConstraint: Constraint?
@@ -65,7 +65,7 @@ private extension BrowserAddressBar {
     containerView.layer.cornerCurve = .continuous
     containerView.layer.borderWidth = 0.5
     containerView.layer.borderColor = UIColor { traits in
-      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.22)
+      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.30)
     }.cgColor
     containerView.backgroundColor = .clear
     setupContainerView()
@@ -90,8 +90,8 @@ private extension BrowserAddressBar {
     shadowView.layer.masksToBounds = false
     shadowView.layer.shadowColor = UIColor.black.cgColor
     shadowView.layer.shadowOffset = CGSize(width: 0, height: 0)
-    shadowView.layer.shadowOpacity = 0.10
-    shadowView.layer.shadowRadius = 12
+    shadowView.layer.shadowOpacity = 0.16
+    shadowView.layer.shadowRadius = 16
     containerView.addSubview(shadowView)
   }
   
