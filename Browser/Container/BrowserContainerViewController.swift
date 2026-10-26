@@ -206,17 +206,85 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
     present(alert, animated: true)
   }
   func browserToolbarDidTapTabs() {
-    let alert = UIAlertController(title: "Tabs (\(tabViewControllers.count))", message: "Select an open tab, or create a new tab.", preferredStyle: .actionSheet)
+    let alert = UIAlertController(
+      title: "Tabs (\(tabViewControllers.count))",
+      message: "Select a tab, close one, or create a new tab.",
+      preferredStyle: .actionSheet
+    )
+
     for index in tabViewControllers.indices {
-      alert.addAction(UIAlertAction(title: "Tab \(index + 1)\(index == currentTabIndex ? " ✓" : "")", style: .default, handler: { [weak self] _ in
-        guard let self = self, index < self.contentView.addressBars.count else { return }
-        self.currentTabIndex = index
-        self.contentView.addressBarsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * self.contentView.addressBarPageWidth, y: 0), animated: true)
+      let selected = index == currentTabIndex
+      alert.addAction(UIAlertAction(
+        title: "\(selected ? "✓ " : "")Tab \(index + 1)",
+        style: .default,
+        handler: { [weak self] _ in
+          guard let self = self, index < self.tabViewControllers.count else { return }
+          self.currentTabIndex = index
+          self.contentView.addressBarsScrollView.setContentOffset(
+            CGPoint(x: CGFloat(index) * self.contentView.addressBarPageWidth, y: 0),
+            animated: true
+          )
+          self.contentView.tabsScrollView.setContentOffset(
+            CGPoint(x: CGFloat(index) * self.contentView.frame.width, y: 0),
+            animated: true
+          )
+        }
+      ))
+    }
+
+    if tabViewControllers.count > 1 {
+      alert.addAction(UIAlertAction(title: "Close Current Tab", style: .destructive, handler: { [weak self] _ in
+        self?.closeCurrentTab()
       }))
     }
-    alert.addAction(UIAlertAction(title: "New Tab", style: .default, handler: { [weak self] _ in self?.openNewTab(isHidden: false) }))
+
+    alert.addAction(UIAlertAction(title: "New Tab", style: .default, handler: { [weak self] _ in
+      guard let self = self else { return }
+      self.openNewTab(isHidden: false)
+      let index = self.tabViewControllers.count - 1
+      self.currentTabIndex = index
+      self.contentView.addressBarsScrollView.setContentOffset(
+        CGPoint(x: CGFloat(index) * self.contentView.addressBarPageWidth, y: 0), animated: true
+      )
+      self.contentView.tabsScrollView.setContentOffset(
+        CGPoint(x: CGFloat(index) * self.contentView.frame.width, y: 0), animated: true
+      )
+    }))
     alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
-    if let popover = alert.popoverPresentationController { popover.sourceView = contentView.toolbar; popover.sourceRect = contentView.toolbar.bounds }
+    if let popover = alert.popoverPresentationController {
+      popover.sourceView = contentView.toolbar
+      popover.sourceRect = contentView.toolbar.bounds
+    }
     present(alert, animated: true)
+  }
+
+  private func closeCurrentTab() {
+    guard tabViewControllers.count > 1, currentTabIndex < tabViewControllers.count else { return }
+    let index = currentTabIndex
+    let tab = tabViewControllers[index]
+    tab.willMove(toParent: nil)
+    tab.view.removeFromSuperview()
+    tab.removeFromParent()
+    tabViewControllers.remove(at: index)
+
+    if index < contentView.tabsStackView.arrangedSubviews.count {
+      let tabView = contentView.tabsStackView.arrangedSubviews[index]
+      contentView.tabsStackView.removeArrangedSubview(tabView)
+      tabView.removeFromSuperview()
+    }
+    if index < contentView.addressBars.count {
+      let bar = contentView.addressBars[index]
+      contentView.addressBarsStackView.removeArrangedSubview(bar)
+      bar.removeFromSuperview()
+    }
+
+    currentTabIndex = min(index, tabViewControllers.count - 1)
+    view.layoutIfNeeded()
+    contentView.tabsScrollView.setContentOffset(
+      CGPoint(x: CGFloat(currentTabIndex) * contentView.frame.width, y: 0), animated: true
+    )
+    contentView.addressBarsScrollView.setContentOffset(
+      CGPoint(x: CGFloat(currentTabIndex) * contentView.addressBarPageWidth, y: 0), animated: true
+    )
   }
 }
