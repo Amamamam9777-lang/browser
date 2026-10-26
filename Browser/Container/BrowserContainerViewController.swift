@@ -169,11 +169,11 @@ extension BrowserContainerViewController: BrowserAddressBarDelegate {
     isAddressBarActive = true
   }
 
-  func addressBarDidTapReload() {
-    guard let tab = tabViewControllers[safe: currentTabIndex], tab.hasLoadedUrl else { return }
-    tab.reloadWebsite()
+  func addressBarDidTapPageMenu(_ addressBar: BrowserAddressBar) {
+    guard tabViewControllers[safe: currentTabIndex]?.hasLoadedUrl == true else { return }
+    presentPageActionsMenu()
   }
-  
+
   func addressBar(_ addressBar: BrowserAddressBar, didReturnWithText text: String) {
     let tabViewController = tabViewControllers[currentTabIndex]
     if let url = self.viewModel.getURL(for: text) {
@@ -202,10 +202,23 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
     present(alert, animated: true)
   }
   func browserToolbarDidTapTabs() {
-    let menu = BrowserSafariMenuViewController(isOnWebPage: tabViewControllers[safe: currentTabIndex]?.hasLoadedUrl == true)
+    // The ellipsis opens browser/tab actions. Page actions such as Hide
+    // Distracting Items belong to the aA button beside the current domain.
+    presentBrowserMenu()
+  }
+
+  private func presentBrowserMenu() {
+    let menu = BrowserSafariMenuViewController(isOnWebPage: false)
     menu.onAllTabs = { [weak self] in self?.presentTabsOverview() }
     menu.onNewTab = { [weak self] in self?.createAndSelectNewTab() }
     menu.onBookmarks = { [weak self] in self?.browserToolbarDidTapBookmarks() }
+    menu.modalPresentationStyle = .overFullScreen
+    menu.modalTransitionStyle = .crossDissolve
+    present(menu, animated: true)
+  }
+
+  private func presentPageActionsMenu() {
+    let menu = BrowserSafariMenuViewController(isOnWebPage: true)
     menu.modalPresentationStyle = .overFullScreen
     menu.modalTransitionStyle = .crossDissolve
     present(menu, animated: true)
@@ -435,7 +448,7 @@ private final class BrowserSafariMenuViewController: UIViewController {
       panel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 11),
       panel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -11),
       panel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -4),
-      panel.heightAnchor.constraint(equalToConstant: isOnWebPage ? 520 : 260),
+      panel.heightAnchor.constraint(equalToConstant: isOnWebPage ? 470 : 260),
       rowsStack.topAnchor.constraint(equalTo: panel.contentView.topAnchor, constant: 13),
       rowsStack.leadingAnchor.constraint(equalTo: panel.contentView.leadingAnchor, constant: 13),
       rowsStack.trailingAnchor.constraint(equalTo: panel.contentView.trailingAnchor, constant: -13),
@@ -506,10 +519,6 @@ private final class BrowserSafariMenuViewController: UIViewController {
 
     let extensions = makeGroup()
     extensions.addArrangedSubview(makeMenuRow(icon: "puzzlepiece.extension", title: "Manage Extensions") { [weak self] in
-      self?.dismiss(animated: true)
-    })
-    extensions.addArrangedSubview(makeSeparator())
-    extensions.addArrangedSubview(makeMenuRow(icon: "person.crop.square.filled.and.at.rectangle", title: "MultiAgent", tint: UIColor(red: 0.35, green: 0.55, blue: 1, alpha: 1)) { [weak self] in
       self?.dismiss(animated: true)
     })
     rowsStack.addArrangedSubview(extensions)

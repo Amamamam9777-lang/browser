@@ -134,7 +134,10 @@ private extension BrowserContainerContentView {
   }
   
   func setupAddressBarKeyboardBackgroundView() {
+    // This backing surface is needed only while the keyboard is visible. Leaving
+    // it visible at launch creates the unwanted light strip behind the toolbar.
     addressBarKeyboardBackgroundView.backgroundColor = .keyboardGray
+    addressBarKeyboardBackgroundView.isHidden = true
     insertSubview(addressBarKeyboardBackgroundView, belowSubview: toolbar)
     addressBarKeyboardBackgroundView.snp.makeConstraints {
       addressBarKeyboardBackgroundViewBottomConstraint = $0.bottom.equalTo(safeAreaLayoutGuide).constraint
