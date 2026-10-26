@@ -45,20 +45,26 @@ class BrowserTabViewController: UIViewController {
     setupWebView()
   }
 
-  /// Captures a tab overview thumbnail using WebKit's snapshot API. Drawing a
-  /// live WKWebView with drawHierarchy can crash on some iOS/WebKit builds when
-  /// the tab grid is opened, so use takeSnapshot for loaded pages instead.
+  /// Captures a lightweight thumbnail for the tab overview.
+  /// Requests are queued by the overview controller, rather than fired for all
+  /// WKWebViews simultaneously. Avoid snapshotting a page during navigation,
+  /// when WebKit is most likely to be rebuilding its backing surface.
   func captureTabSnapshot(completion: @escaping (UIImage?) -> Void) {
     if hasLoadedUrl {
       let webView = contentView.webView
-      guard webView.bounds.width > 1, webView.bounds.height > 1 else {
+      guard webView.bounds.width > 1,
+            webView.bounds.height > 1,
+            !webView.isLoading else {
         DispatchQueue.main.async { completion(nil) }
         return
       }
       let configuration = WKSnapshotConfiguration()
       configuration.rect = CGRect(origin: .zero, size: webView.bounds.size)
       webView.takeSnapshot(with: configuration) { image, _ in
-        DispatchQueue.main.async { completion(image) }
+        DispatchQueue.main.async {
+          guard let image else { completion(nil); return }
+          completion(Self.makeTabThumbnail(from: image))
+        }
       }
       return
     }
@@ -75,7 +81,22 @@ class BrowserTabViewController: UIViewController {
       let image = renderer.image { context in
         startPage.layer.render(in: context.cgContext)
       }
-      completion(image)
+      completion(Self.makeTabThumbnail(from: image))
+    }
+  }
+
+  private static func makeTabThumbnail(from image: UIImage) -> UIImage {
+    // Tab cards only need a small preview. Rendering at 1x and limiting the
+    // width keeps many open tabs from retaining full-resolution screenshots.
+    let maxWidth: CGFloat = 400
+    let scale = min(1, maxWidth / max(image.size.width, 1))
+    let size = CGSize(width: max(1, image.size.width * scale),
+                      height: max(1, image.size.height * scale))
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = true
+    return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+      image.draw(in: CGRect(origin: .zero, size: size))
     }
   }
   
