@@ -117,7 +117,7 @@ private extension BrowserContainerViewController {
     addressBar.delegate = self
     contentView.addressBarsStackView.addArrangedSubview(addressBar)
     addressBar.snp.makeConstraints {
-      $0.width.equalTo(contentView).offset(contentView.addressBarWidthOffset)
+      $0.width.equalTo(contentView.addressBarsScrollView).offset(-contentView.addressBarsStackViewSidePadding * 2)
     }
     
     if isHidden {

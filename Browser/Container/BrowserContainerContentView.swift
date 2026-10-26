@@ -99,8 +99,7 @@ private extension BrowserContainerContentView {
     toolbar.snp.makeConstraints {
       $0.top.equalTo(tabsScrollView.snp.bottom)
       $0.centerX.equalToSuperview()
-      $0.width.lessThanOrEqualToSuperview().offset(-36)
-      $0.width.equalTo(340).priority(.high)
+      $0.leading.trailing.equalToSuperview().inset(12)
       toolbarBottomConstraint = $0.bottom.equalTo(safeAreaLayoutGuide.snp.bottom).offset(-8).constraint
       $0.height.equalTo(56)
     }
@@ -113,8 +112,10 @@ private extension BrowserContainerContentView {
     addressBarsScrollView.decelerationRate = .fast
     addSubview(addressBarsScrollView)
     addressBarsScrollView.snp.makeConstraints {
-      addressBarsScrollViewBottomConstraint = $0.bottom.equalTo(safeAreaLayoutGuide).offset(addressBarsScrollViewExpandingFullyBottomOffset).constraint
-      $0.leading.trailing.equalToSuperview()
+      addressBarsScrollViewBottomConstraint = $0.bottom.equalTo(safeAreaLayoutGuide).offset(-8).constraint
+      $0.centerX.equalToSuperview()
+      $0.width.equalToSuperview().multipliedBy(0.58)
+      $0.height.equalTo(56)
     }
   }
   
