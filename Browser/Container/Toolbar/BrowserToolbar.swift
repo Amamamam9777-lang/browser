@@ -1,54 +1,67 @@
-//
-//  BrowserToolbar.swift
-//  Browser
-//
-//  Created by Amer Hukić on 10. 9. 2021..
-//
-
+// Safari-inspired compact glass toolbar.
 import UIKit
 
-class BrowserToolbar: UIToolbar {
+protocol BrowserToolbarDelegate: AnyObject {
+  func browserToolbarDidTapBack()
+  func browserToolbarDidTapForward()
+  func browserToolbarDidTapShare()
+  func browserToolbarDidTapBookmarks()
+  func browserToolbarDidTapTabs()
+}
+
+final class BrowserToolbar: UIToolbar {
+  weak var browserDelegate: BrowserToolbarDelegate?
   let goBackButton = UIBarButtonItem(image: UIImage(systemName: "chevron.left"), style: .plain, target: nil, action: nil)
   let goForwardButton = UIBarButtonItem(image: UIImage(systemName: "chevron.right"), style: .plain, target: nil, action: nil)
   let shareButton = UIBarButtonItem(image: UIImage(systemName: "square.and.arrow.up"), style: .plain, target: nil, action: nil)
   let bookmarkButton = UIBarButtonItem(image: UIImage(systemName: "book"), style: .plain, target: nil, action: nil)
   let tabsButton = UIBarButtonItem(image: UIImage(systemName: "square.on.square"), style: .plain, target: nil, action: nil)
-  
+
   override init(frame: CGRect) {
-    // If toolbar frame size is not set then autolayout breaks so we need to set it manually
-    // https://stackoverflow.com/questions/59700020/layout-constraint-errors-with-simple-uitoolar-for-keyboard-inputaccessoryview
-    super.init(frame: CGRect(origin: .zero, size: CGSize(width: 100, height: 100)))
+    super.init(frame: CGRect(origin: .zero, size: CGSize(width: 100, height: 64)))
     setupButtons()
-    // Safari-inspired translucent bottom toolbar.
-    if #available(iOS 15.0, *) {
-      let appearance = UIToolbarAppearance()
-      appearance.configureWithDefaultBackground()
-      appearance.backgroundEffect = UIBlurEffect(style: .systemMaterial)
-      appearance.backgroundColor = UIColor.secondarySystemBackground.withAlphaComponent(0.72)
-      standardAppearance = appearance
-      scrollEdgeAppearance = appearance
-      compactAppearance = appearance
-    }
-    tintColor = .systemBlue
   }
-  
-  required init?(coder: NSCoder) {
-    fatalError("init(coder:) has not been implemented")
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+    super.traitCollectionDidChange(previousTraitCollection)
+    applyGlassStyle()
   }
+
+  private func setupButtons() {
+    goBackButton.target = self; goBackButton.action = #selector(backTapped)
+    goForwardButton.target = self; goForwardButton.action = #selector(forwardTapped)
+    shareButton.target = self; shareButton.action = #selector(shareTapped)
+    bookmarkButton.target = self; bookmarkButton.action = #selector(bookmarksTapped)
+    tabsButton.target = self; tabsButton.action = #selector(tabsTapped)
+    items = [goBackButton, UIBarButtonItem.flexibleSpace(), goForwardButton, UIBarButtonItem.flexibleSpace(), shareButton, UIBarButtonItem.flexibleSpace(), bookmarkButton, UIBarButtonItem.flexibleSpace(), tabsButton]
+    isTranslucent = true
+    clipsToBounds = true
+    layer.cornerRadius = 25
+    layer.cornerCurve = .continuous
+    applyGlassStyle()
+  }
+
+  private func applyGlassStyle() {
+    let dark = traitCollection.userInterfaceStyle == .dark
+    backgroundColor = dark ? UIColor(white: 0.12, alpha: 0.82) : UIColor(white: 1, alpha: 0.78)
+    barTintColor = dark ? UIColor(white: 0.12, alpha: 0.82) : UIColor(white: 1, alpha: 0.78)
+    tintColor = dark ? .white : UIColor(red: 0.05, green: 0.35, blue: 0.85, alpha: 1)
+    layer.borderWidth = 0.5
+    layer.borderColor = (dark ? UIColor.white : UIColor.black).withAlphaComponent(0.08).cgColor
+    layer.shadowColor = UIColor.black.cgColor
+    layer.shadowOpacity = 0.10
+    layer.shadowRadius = 16
+    layer.shadowOffset = CGSize(width: 0, height: 5)
+  }
+
+  @objc private func backTapped() { browserDelegate?.browserToolbarDidTapBack() }
+  @objc private func forwardTapped() { browserDelegate?.browserToolbarDidTapForward() }
+  @objc private func shareTapped() { browserDelegate?.browserToolbarDidTapShare() }
+  @objc private func bookmarksTapped() { browserDelegate?.browserToolbarDidTapBookmarks() }
+  @objc private func tabsTapped() { browserDelegate?.browserToolbarDidTapTabs() }
 }
 
-private extension BrowserToolbar {
-  func setupButtons() {
-    items = [
-      goBackButton,
-      UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
-      goForwardButton,
-      UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
-      shareButton,
-      UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
-      bookmarkButton,
-      UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
-      tabsButton
-    ]
-  }
+private extension UIBarButtonItem {
+  static func flexibleSpace() -> UIBarButtonItem { UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil) }
 }

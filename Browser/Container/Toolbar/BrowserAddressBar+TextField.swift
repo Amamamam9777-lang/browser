@@ -29,7 +29,7 @@ extension BrowserAddressBar {
           leftView = paddingView
           rightView = nil
           selectAll(nil)
-          textColor = .black
+          textColor = UIColor { traits in traits.userInterfaceStyle == .dark ? .white : .black }
         case .inactive:
           showDefaultPlaceholder()
           leftView = hasText ? aAButton : magnifyingGlassImageView
@@ -80,8 +80,8 @@ extension BrowserAddressBar {
 // MARK: Helper methods
 private extension BrowserAddressBar.TextField {
   func setupView() {
-    layer.cornerRadius = 20
-    backgroundColor = UIColor.secondarySystemBackground.withAlphaComponent(0.94)
+    layer.cornerRadius = 12
+    backgroundColor = UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(white: 0.13, alpha: 1) : .white }
     clearButtonMode = .whileEditing
     returnKeyType = .go
     leftViewMode = .always
@@ -106,13 +106,13 @@ private extension BrowserAddressBar.TextField {
   func setupAaButton() {
     aAButton.setImage(UIImage(systemName: "textformat.size")?.withRenderingMode(.alwaysTemplate), for: .normal)
     aAButton.imageView?.contentMode = .scaleAspectFit
-    aAButton.tintColor = .black
+    aAButton.tintColor = UIColor { traits in traits.userInterfaceStyle == .dark ? .white : .black }
   }
   
   func setupReloadButton() {
     reloadButton.setImage(UIImage(systemName: "arrow.clockwise")?.withRenderingMode(.alwaysTemplate), for: .normal)
     reloadButton.imageView?.contentMode = .scaleAspectFit
-    reloadButton.tintColor = .black
+    reloadButton.tintColor = UIColor { traits in traits.userInterfaceStyle == .dark ? .white : .black }
   }
   
   func showDefaultPlaceholder() {

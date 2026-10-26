@@ -58,8 +58,10 @@ class BrowserAddressBar: UIView {
 private extension BrowserAddressBar {
   func setupView() {
     layer.masksToBounds = false
-    containerView.layer.masksToBounds = false
+    containerView.layer.masksToBounds = true
     containerView.layer.cornerRadius = 24
+    containerView.layer.cornerCurve = .continuous
+    containerView.backgroundColor = UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(white: 0.13, alpha: 0.92) : UIColor(white: 1, alpha: 0.88) }
     setupContainerView()
     setupShadowView()
     setupTextField()
@@ -79,7 +81,7 @@ private extension BrowserAddressBar {
   func setupShadowView() {
     shadowView.layer.masksToBounds = false
     shadowView.layer.shadowColor = UIColor.black.cgColor
-    shadowView.layer.shadowOffset = CGSize(width: 0, height: 3)
+    shadowView.layer.shadowOffset = CGSize(width: 0, height: 0)
     shadowView.layer.shadowOpacity = 0.10
     shadowView.layer.shadowRadius = 12
     containerView.addSubview(shadowView)
@@ -109,6 +111,8 @@ private extension BrowserAddressBar {
   
   func setupDomainLabel() {
     domainLabel.textAlignment = .center
+    domainLabel.font = .systemFont(ofSize: 15, weight: .medium)
+    domainLabel.textColor = UIColor { traits in traits.userInterfaceStyle == .dark ? .white : .darkText }
     addSubview(domainLabel)
     domainLabel.snp.makeConstraints {
       $0.center.equalToSuperview()
