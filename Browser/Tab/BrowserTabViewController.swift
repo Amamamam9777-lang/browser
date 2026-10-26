@@ -24,6 +24,7 @@ class BrowserTabViewController: UIViewController {
   var currentURL: URL? { contentView.webView.url }
   func goBackIfPossible() { if contentView.webView.canGoBack { contentView.webView.goBack() } }
   func goForwardIfPossible() { if contentView.webView.canGoForward { contentView.webView.goForward() } }
+  func reloadWebsite() { contentView.webView.reload() }
   weak var delegate: BrowserTabViewControllerDelegate?
   
   override var preferredStatusBarStyle: UIStatusBarStyle {
