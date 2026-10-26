@@ -59,9 +59,13 @@ private extension BrowserAddressBar {
   func setupView() {
     layer.masksToBounds = false
     containerView.layer.masksToBounds = true
-    containerView.layer.cornerRadius = 24
+    containerView.layer.cornerRadius = 25
     containerView.layer.cornerCurve = .continuous
-    containerView.backgroundColor = UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(white: 0.13, alpha: 0.92) : UIColor(white: 1, alpha: 0.88) }
+    containerView.layer.borderWidth = 0.5
+    containerView.layer.borderColor = UIColor { traits in
+      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.08)
+    }.cgColor
+    containerView.backgroundColor = UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(white: 0.13, alpha: 0.90) : UIColor(white: 1, alpha: 0.90) }
     setupContainerView()
     setupShadowView()
     setupTextField()

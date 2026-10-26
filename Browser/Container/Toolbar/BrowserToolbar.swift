@@ -47,16 +47,19 @@ final class BrowserToolbar: UIToolbar {
     ]
     setItems(toolbarItems, animated: false)
     isTranslucent = true
-    clipsToBounds = true
-    layer.cornerRadius = 25
+    // Remove the stock full-width UIKit toolbar chrome so the rounded glass surface is visible.
+    setBackgroundImage(UIImage(), forToolbarPosition: .any, barMetrics: .default)
+    setShadowImage(UIImage(), forToolbarPosition: .any)
+    clipsToBounds = false
+    layer.cornerRadius = 28
     layer.cornerCurve = .continuous
     applyGlassStyle()
   }
 
   private func applyGlassStyle() {
     let dark = traitCollection.userInterfaceStyle == .dark
-    backgroundColor = dark ? UIColor(white: 0.12, alpha: 0.82) : UIColor(white: 1, alpha: 0.78)
-    barTintColor = dark ? UIColor(white: 0.12, alpha: 0.82) : UIColor(white: 1, alpha: 0.78)
+    backgroundColor = dark ? UIColor(white: 0.12, alpha: 0.86) : UIColor(white: 1, alpha: 0.84)
+    barTintColor = .clear
     tintColor = dark ? .white : UIColor(red: 0.05, green: 0.35, blue: 0.85, alpha: 1)
     layer.borderWidth = 0.5
     layer.borderColor = (dark ? UIColor.white : UIColor.black).withAlphaComponent(0.08).cgColor
