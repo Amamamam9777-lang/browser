@@ -49,27 +49,33 @@ private extension BrowserTabContentView {
   }
   
   func setupShadow() {
+    // A view-wide light shadow creates a visible horizontal seam at the top of
+    // webpages. Safari's content itself should extend edge-to-edge instead.
     layer.masksToBounds = false
-    layer.shadowColor = UIColor.lightGray.cgColor
-    layer.shadowOffset = CGSize(width: 0, height: 0)
-    layer.shadowOpacity = 0.5
-    layer.shadowRadius = 15
+    layer.shadowOpacity = 0
+    layer.shadowRadius = 0
   }
   
   func setupWebView() {
     webView.allowsBackForwardNavigationGestures = true
     webView.scrollView.automaticallyAdjustsScrollIndicatorInsets = false
+    webView.scrollView.contentInsetAdjustmentBehavior = .never
     webView.scrollView.contentInset = .zero
     webView.scrollView.layer.masksToBounds = false
     addSubview(webView)
     webView.snp.makeConstraints {
-      $0.top.equalTo(safeAreaLayoutGuide)
-      $0.leading.bottom.trailing.equalToSuperview()
+      // Extend page content behind the status bar, like Safari's edge-to-edge
+      // layout. Pinning to safeAreaLayoutGuide leaves an unwanted strip/seam.
+      $0.edges.equalToSuperview()
     }
   }
   
   func setupStatusBarBackgroundView() {
-    statusBarBackgroundView.backgroundColor = .black
+    // Keep a dark reference color for preferredStatusBarStyle while the view
+    // itself is hidden so the webpage renders under the status bar edge-to-edge.
+    statusBarBackgroundView.backgroundColor = UIColor(red: 0.025, green: 0.025, blue: 0.03, alpha: 1)
+    statusBarBackgroundView.isHidden = true
+    statusBarBackgroundView.isUserInteractionEnabled = false
     addSubview(statusBarBackgroundView)
     statusBarBackgroundView.snp.makeConstraints {
       $0.top.leading.trailing.equalToSuperview()
