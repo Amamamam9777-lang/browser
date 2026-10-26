@@ -98,9 +98,11 @@ private extension BrowserContainerContentView {
     addSubview(toolbar)
     toolbar.snp.makeConstraints {
       $0.top.equalTo(tabsScrollView.snp.bottom)
-      $0.leading.trailing.equalToSuperview()
-      toolbarBottomConstraint = $0.bottom.equalTo(safeAreaLayoutGuide.snp.bottom).constraint
-      $0.height.equalTo(72)
+      $0.centerX.equalToSuperview()
+      $0.width.lessThanOrEqualToSuperview().offset(-36)
+      $0.width.equalTo(340).priority(.high)
+      toolbarBottomConstraint = $0.bottom.equalTo(safeAreaLayoutGuide.snp.bottom).offset(-8).constraint
+      $0.height.equalTo(56)
     }
   }
   
