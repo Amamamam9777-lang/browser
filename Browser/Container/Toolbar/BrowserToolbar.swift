@@ -34,7 +34,18 @@ final class BrowserToolbar: UIToolbar {
     shareButton.target = self; shareButton.action = #selector(shareTapped)
     bookmarkButton.target = self; bookmarkButton.action = #selector(bookmarksTapped)
     tabsButton.target = self; tabsButton.action = #selector(tabsTapped)
-    items = [goBackButton, UIBarButtonItem.flexibleSpace(), goForwardButton, UIBarButtonItem.flexibleSpace(), shareButton, UIBarButtonItem.flexibleSpace(), bookmarkButton, UIBarButtonItem.flexibleSpace(), tabsButton]
+    let toolbarItems: [UIBarButtonItem] = [
+      goBackButton,
+      UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
+      goForwardButton,
+      UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
+      shareButton,
+      UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
+      bookmarkButton,
+      UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
+      tabsButton
+    ]
+    setItems(toolbarItems, animated: false)
     isTranslucent = true
     clipsToBounds = true
     layer.cornerRadius = 25
@@ -60,8 +71,4 @@ final class BrowserToolbar: UIToolbar {
   @objc private func shareTapped() { browserDelegate?.browserToolbarDidTapShare() }
   @objc private func bookmarksTapped() { browserDelegate?.browserToolbarDidTapBookmarks() }
   @objc private func tabsTapped() { browserDelegate?.browserToolbarDidTapTabs() }
-}
-
-private extension UIBarButtonItem {
-  static func flexibleSpace() -> UIBarButtonItem { UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil) }
 }
