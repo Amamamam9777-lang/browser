@@ -93,7 +93,12 @@ final class BrowserToolbar: UIView {
     layer.shadowOpacity = traitCollection.userInterfaceStyle == .dark ? 0.22 : 0.10
     layer.shadowRadius = 16
     layer.shadowOffset = CGSize(width: 0, height: 5)
-    iconButtons.forEach { $0.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 19, weight: .regular) }
+    iconButtons.forEach {
+      $0.setPreferredSymbolConfiguration(
+        UIImage.SymbolConfiguration(pointSize: 19, weight: .regular),
+        forImageIn: .normal
+      )
+    }
   }
 
   @objc private func backTapped() { browserDelegate?.browserToolbarDidTapBack() }
