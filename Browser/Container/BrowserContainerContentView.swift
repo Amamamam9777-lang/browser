@@ -106,7 +106,10 @@ private extension BrowserContainerContentView {
   }
   
   func setupAddressBarsScrollView() {
-    addressBarsScrollView.clipsToBounds = false
+    // Only the selected address field may be visible. Without clipping,
+    // the previous tab's domain leaks in from the left when creating a tab.
+    addressBarsScrollView.clipsToBounds = true
+    addressBarsScrollView.layer.masksToBounds = true
     addressBarsScrollView.showsHorizontalScrollIndicator = false
     addressBarsScrollView.showsVerticalScrollIndicator = false
     addressBarsScrollView.decelerationRate = .fast
@@ -136,7 +139,10 @@ private extension BrowserContainerContentView {
   func setupAddressBarKeyboardBackgroundView() {
     // This backing surface is needed only while the keyboard is visible. Leaving
     // it visible at launch creates the unwanted light strip behind the toolbar.
-    addressBarKeyboardBackgroundView.backgroundColor = .keyboardGray
+    // Never paint a light slab behind the floating toolbar. The keyboard and
+    // parent view provide their own dark backdrop; this view stays transparent.
+    addressBarKeyboardBackgroundView.backgroundColor = .clear
+    addressBarKeyboardBackgroundView.isOpaque = false
     addressBarKeyboardBackgroundView.isHidden = true
     insertSubview(addressBarKeyboardBackgroundView, belowSubview: toolbar)
     addressBarKeyboardBackgroundView.snp.makeConstraints {

@@ -42,6 +42,7 @@ private extension BrowserContainerViewController {
   
   func updateStateForKeyboardAppearing(with keyboardHeight: CGFloat) {
     contentView.addressBarKeyboardBackgroundView.isHidden = false
+    contentView.addressBarKeyboardBackgroundView.backgroundColor = .clear
     let offset = keyboardHeight - contentView.safeAreaInsets.bottom
     contentView.addressBarKeyboardBackgroundViewBottomConstraint?.update(offset: -offset + 10)
     contentView.addressBarsScrollViewBottomConstraint?.update(offset: -offset)

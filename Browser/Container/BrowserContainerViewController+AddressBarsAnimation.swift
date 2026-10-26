@@ -26,7 +26,10 @@ extension BrowserContainerViewController: UIScrollViewDelegate {
     }
     nextIndex = min(max(0, nextIndex), max(0, tabViewControllers.count - 1))
     currentTabIndex = nextIndex
-    targetContentOffset.pointee = CGPoint(x: CGFloat(nextIndex) * page, y: targetContentOffset.pointee.y)
+    // Use the arranged view's measured position, not a guessed width. This
+    // prevents fractions of the previous tab from remaining visible.
+    let targetX = contentView.addressBars[safe: nextIndex]?.frame.minX ?? CGFloat(nextIndex) * page
+    targetContentOffset.pointee = CGPoint(x: targetX, y: targetContentOffset.pointee.y)
   }
 
   func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {}

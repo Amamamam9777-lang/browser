@@ -135,12 +135,34 @@ private extension BrowserContainerViewController {
   }
   
   func updateAddressBarsAfterTabChange() {
-    currentAddressBar.setSideButtonsHidden(false)
-    currentAddressBar.isUserInteractionEnabled = true
+    guard contentView.addressBars.indices.contains(currentTabIndex) else { return }
+    let selectedBar = contentView.addressBars[currentTabIndex]
+    if let tab = tabViewControllers[safe: currentTabIndex], tab.hasLoadedUrl,
+       let url = tab.currentURL {
+      selectedBar.setDisplayedDomain(viewModel.getDomain(from: url))
+    } else {
+      // A blank tab must never inherit the previous tab's title or URL.
+      selectedBar.setDisplayedDomain("")
+    }
+
+    selectedBar.setSideButtonsHidden(false)
+    selectedBar.isUserInteractionEnabled = true
     leftAddressBar?.setSideButtonsHidden(true)
     leftAddressBar?.isUserInteractionEnabled = false
     rightAddressBar?.setSideButtonsHidden(true)
     rightAddressBar?.isUserInteractionEnabled = false
+  }
+
+  func scrollAddressBarToCurrentTab() {
+    guard contentView.addressBars.indices.contains(currentTabIndex) else { return }
+    view.layoutIfNeeded()
+    contentView.layoutIfNeeded()
+    contentView.addressBarsScrollView.layoutIfNeeded()
+    let bar = contentView.addressBars[currentTabIndex]
+    let desiredX = bar.frame.minX
+    let maxX = max(0, contentView.addressBarsScrollView.contentSize.width - contentView.addressBarsScrollView.bounds.width)
+    let x = min(max(0, desiredX), maxX)
+    contentView.addressBarsScrollView.setContentOffset(CGPoint(x: x, y: 0), animated: false)
   }
   
   func setupAddressBarsExpandingOnTap() {
@@ -229,7 +251,7 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
     view.layoutIfNeeded()
     let index = tabViewControllers.count - 1
     currentTabIndex = index
-    contentView.addressBarsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * contentView.addressBarPageWidth, y: 0), animated: false)
+    scrollAddressBarToCurrentTab()
     contentView.tabsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * (contentView.frame.width + contentView.tabsStackViewSpacing), y: 0), animated: false)
   }
 
@@ -241,7 +263,7 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
       onSelect: { [weak self] index in
         guard let self, index >= 0, index < self.tabViewControllers.count else { return }
         self.currentTabIndex = index
-        self.contentView.addressBarsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * self.contentView.addressBarPageWidth, y: 0), animated: false)
+        self.scrollAddressBarToCurrentTab()
         self.contentView.tabsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * (self.contentView.frame.width + self.contentView.tabsStackViewSpacing), y: 0), animated: false)
       },
       onNewTab: { [weak self] in self?.createAndSelectNewTab() })
