@@ -19,8 +19,7 @@ extension BrowserAddressBar {
     private let paddingView = UIView()
     private let magnifyingGlassImageView = UIImageView()
     private let aAButton = UIButton(type: .system)
-    private let reloadButton = UIButton(type: .system)
-    var onReload: (() -> Void)?
+    var onPageMenu: (() -> Void)?
     
     var activityState = State.inactive {
       didSet {
@@ -34,7 +33,9 @@ extension BrowserAddressBar {
         case .inactive:
           showDefaultPlaceholder()
           leftView = hasText ? aAButton : magnifyingGlassImageView
-          rightView = hasText ? reloadButton : nil
+          // Safari's reload icon is intentionally omitted from this clone's
+          // address field. It used to sit on top of the domain label.
+          rightView = nil
           textColor = .clear
         }
       }
@@ -86,7 +87,7 @@ private extension BrowserAddressBar.TextField {
     clearButtonMode = .whileEditing
     returnKeyType = .go
     leftViewMode = .always
-    rightViewMode = .always
+    rightViewMode = .never
     autocorrectionType = .no
     autocapitalizationType = .none
     keyboardType = .webSearch
@@ -94,7 +95,6 @@ private extension BrowserAddressBar.TextField {
     clipsToBounds = true
     setupMagnifyingGlassImage()
     setupAaButton()
-    setupReloadButton()
     activityState = .inactive
   }
   
@@ -105,16 +105,11 @@ private extension BrowserAddressBar.TextField {
   }
   
   func setupAaButton() {
-    aAButton.setImage(UIImage(systemName: "textformat.size")?.withRenderingMode(.alwaysTemplate), for: .normal)
-    aAButton.imageView?.contentMode = .scaleAspectFit
-    aAButton.tintColor = UIColor { traits in traits.userInterfaceStyle == .dark ? .white : .black }
-  }
-  
-  func setupReloadButton() {
-    reloadButton.setImage(UIImage(systemName: "arrow.clockwise")?.withRenderingMode(.alwaysTemplate), for: .normal)
-    reloadButton.addTarget(self, action: #selector(reloadTapped), for: .touchUpInside)
-    reloadButton.imageView?.contentMode = .scaleAspectFit
-    reloadButton.tintColor = UIColor { traits in traits.userInterfaceStyle == .dark ? .white : .black }
+    aAButton.setTitle("aA", for: .normal)
+    aAButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+    aAButton.setTitleColor(UIColor { traits in traits.userInterfaceStyle == .dark ? .white : .black }, for: .normal)
+    aAButton.accessibilityLabel = "Page settings"
+    aAButton.addTarget(self, action: #selector(pageMenuTapped), for: .touchUpInside)
   }
   
   func showDefaultPlaceholder() {
@@ -124,5 +119,5 @@ private extension BrowserAddressBar.TextField {
 }
 
 private extension BrowserAddressBar.TextField {
-  @objc func reloadTapped() { onReload?() }
+  @objc func pageMenuTapped() { onPageMenu?() }
 }

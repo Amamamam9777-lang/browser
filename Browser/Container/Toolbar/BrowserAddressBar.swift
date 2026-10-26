@@ -10,7 +10,7 @@ import SnapKit
 
 protocol BrowserAddressBarDelegate: AnyObject {
   func addressBarDidBeginEditing()
-  func addressBarDidTapReload()
+  func addressBarDidTapPageMenu(_ addressBar: BrowserAddressBar)
   func addressBar(_ addressBar: BrowserAddressBar, didReturnWithText text: String)
 }
 
@@ -102,7 +102,10 @@ private extension BrowserAddressBar {
   
   func setupTextField() {
     textField.delegate = self
-    textField.onReload = { [weak self] in self?.delegate?.addressBarDidTapReload() }
+    textField.onPageMenu = { [weak self] in
+      guard let self else { return }
+      self.delegate?.addressBarDidTapPageMenu(self)
+    }
     containerView.addSubview(textField)
     textField.snp.makeConstraints {
       $0.height.equalTo(42)
@@ -127,10 +130,17 @@ private extension BrowserAddressBar {
     domainLabel.textAlignment = .center
     domainLabel.font = .systemFont(ofSize: 15, weight: .medium)
     domainLabel.textColor = UIColor { traits in traits.userInterfaceStyle == .dark ? .white : .darkText }
+    domainLabel.lineBreakMode = .byTruncatingMiddle
+    domainLabel.adjustsFontSizeToFitWidth = true
+    domainLabel.minimumScaleFactor = 0.78
+    domainLabel.isUserInteractionEnabled = false
     addSubview(domainLabel)
+    // Keep the visible domain between the aA control and the trailing edge.
+    // The previous centered label spanned the aA button and made both texts overlap.
     domainLabel.snp.makeConstraints {
-      $0.center.equalToSuperview()
-      $0.width.equalToSuperview().multipliedBy(0.65)
+      $0.leading.equalTo(containerView.snp.leading).offset(42)
+      $0.trailing.equalTo(containerView.snp.trailing).inset(10)
+      $0.centerY.equalTo(containerView)
     }
   }
   
