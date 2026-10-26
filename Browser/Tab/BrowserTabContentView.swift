@@ -10,7 +10,11 @@ import WebKit
 import SnapKit
 
 class BrowserTabContentView: UIView {
-  let webView = WKWebView()
+  let webView: WKWebView = {
+    let webView = WKWebView()
+    webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1"
+    return webView
+  }()
   let emptyStateView = BrowserTabEmptyStateView()
   let statusBarBackgroundView = StatusBarBackgroundView()
   var statusBarBackgroundViewHeightConstraint: Constraint?
