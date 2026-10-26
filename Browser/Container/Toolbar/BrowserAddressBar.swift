@@ -63,9 +63,9 @@ private extension BrowserAddressBar {
     containerView.layer.cornerCurve = .continuous
     containerView.layer.borderWidth = 0.5
     containerView.layer.borderColor = UIColor { traits in
-      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.08)
+      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.12)
     }.cgColor
-    containerView.backgroundColor = UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(white: 0.13, alpha: 0.90) : UIColor(white: 1, alpha: 0.90) }
+    containerView.backgroundColor = UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(white: 0.12, alpha: 0.78) : UIColor(white: 1, alpha: 0.78) }
     setupContainerView()
     setupShadowView()
     setupTextField()
