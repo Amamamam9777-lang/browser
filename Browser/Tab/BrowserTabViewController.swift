@@ -45,26 +45,49 @@ class BrowserTabViewController: UIViewController {
     setupWebView()
   }
 
-  /// Captures the displayed page for the tab overview without stretching a live
-  /// WKWebView snapshot into the thumbnail's aspect ratio.
+  /// Captures a tab overview thumbnail using WebKit's snapshot API. Drawing a
+  /// live WKWebView with drawHierarchy can crash on some iOS/WebKit builds when
+  /// the tab grid is opened, so use takeSnapshot for loaded pages instead.
   func captureTabSnapshot(completion: @escaping (UIImage?) -> Void) {
-    view.layoutIfNeeded()
-    let size = view.bounds.size
-    guard size.width > 1, size.height > 1 else {
-      completion(nil)
+    if hasLoadedUrl {
+      let webView = contentView.webView
+      guard webView.bounds.width > 1, webView.bounds.height > 1 else {
+        DispatchQueue.main.async { completion(nil) }
+        return
+      }
+      let configuration = WKSnapshotConfiguration()
+      configuration.rect = CGRect(origin: .zero, size: webView.bounds.size)
+      webView.takeSnapshot(with: configuration) { image, _ in
+        DispatchQueue.main.async { completion(image) }
+      }
       return
     }
-    let renderer = UIGraphicsImageRenderer(size: size)
-    let image = renderer.image { _ in
-      view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: false)
+
+    // The native start page contains only UIKit views; render this surface
+    // alone, rather than asking UIKit to draw the WKWebView underneath it.
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { completion(nil); return }
+      let startPage = self.contentView.emptyStateView
+      startPage.layoutIfNeeded()
+      let size = startPage.bounds.size
+      guard size.width > 1, size.height > 1 else { completion(nil); return }
+      let renderer = UIGraphicsImageRenderer(size: size)
+      let image = renderer.image { context in
+        startPage.layer.render(in: context.cgContext)
+      }
+      completion(image)
     }
-    completion(image)
   }
   
   override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
+    guard isViewLoaded else { return }
     switch keyPath {
     case #keyPath(WKWebView.url):
-      delegate?.tabViewController(self, didStartLoadingURL: contentView.webView.url!)
+      // WKWebView may publish nil while a blank tab is being prepared.
+      // Do not force-unwrap this KVO value.
+      if let url = contentView.webView.url {
+        delegate?.tabViewController(self, didStartLoadingURL: url)
+      }
     case #keyPath(WKWebView.estimatedProgress):
       delegate?.tabViewController(self, didChangeLoadingProgressTo: Float(contentView.webView.estimatedProgress))
     case #keyPath(WKWebView.themeColor):
@@ -72,7 +95,7 @@ class BrowserTabViewController: UIViewController {
     case #keyPath(WKWebView.underPageBackgroundColor):
       updateStatusBarColor()
     default:
-      break
+      super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
     }
   }
   
@@ -108,7 +131,14 @@ private extension BrowserTabViewController {
   }
   
   func updateStatusBarColor() {
-    let color = (contentView.webView.themeColor ?? contentView.webView.underPageBackgroundColor ?? .white).withAlphaComponent(1)
+    // While a new tab's native Start Page is visible, never inherit WebKit's
+    // default white under-page color. Use the live website color only after load.
+    let color: UIColor
+    if hasLoadedUrl {
+      color = (contentView.webView.themeColor ?? contentView.webView.underPageBackgroundColor ?? .black).withAlphaComponent(1)
+    } else {
+      color = UIColor(red: 0.025, green: 0.025, blue: 0.03, alpha: 1)
+    }
     contentView.statusBarBackgroundView.backgroundColor = color
     setNeedsStatusBarAppearanceUpdate()
   }
