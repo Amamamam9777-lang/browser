@@ -58,6 +58,8 @@ class BrowserContainerViewController: UIViewController {
   
   override func viewDidLoad() {
     super.viewDidLoad()
+    view.overrideUserInterfaceStyle = .dark
+    contentView.overrideUserInterfaceStyle = .dark
     setupCancelButton()
     contentView.toolbar.browserDelegate = self
     setupAddressBarsScrollView()
@@ -77,7 +79,7 @@ class BrowserContainerViewController: UIViewController {
     if tabViewControllers.isEmpty { openNewTab(isHidden: false) }
     let tab = tabViewControllers[currentTabIndex]
     tab.loadWebsite(from: url)
-    currentAddressBar.domainLabel.text = viewModel.getDomain(from: url)
+    currentAddressBar.setDisplayedDomain(viewModel.getDomain(from: url))
     dismissKeyboard()
   }
 }
@@ -174,14 +176,8 @@ extension BrowserContainerViewController: BrowserAddressBarDelegate {
   
   func addressBar(_ addressBar: BrowserAddressBar, didReturnWithText text: String) {
     let tabViewController = tabViewControllers[currentTabIndex]
-    let isLastTab = currentTabIndex == tabViewControllers.count - 1
-    if isLastTab && !tabViewController.hasLoadedUrl {
-      // if we started loading a URL and it is on the last tab then ->
-      // open a hidden tab so that we can prepare it for new tab animation if the user swipes to the left
-      openNewTab(isHidden: true)
-    }
     if let url = self.viewModel.getURL(for: text) {
-      addressBar.domainLabel.text = viewModel.getDomain(from: url)
+      addressBar.setDisplayedDomain(viewModel.getDomain(from: url))
       tabViewController.loadWebsite(from: url)
     }
     dismissKeyboard()
@@ -206,6 +202,26 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
     present(alert, animated: true)
   }
   func browserToolbarDidTapTabs() {
+    let menu = BrowserSafariMenuViewController(isOnWebPage: tabViewControllers[safe: currentTabIndex]?.hasLoadedUrl == true)
+    menu.onAllTabs = { [weak self] in self?.presentTabsOverview() }
+    menu.onNewTab = { [weak self] in self?.createAndSelectNewTab() }
+    menu.onBookmarks = { [weak self] in self?.browserToolbarDidTapBookmarks() }
+    menu.modalPresentationStyle = .overFullScreen
+    menu.modalTransitionStyle = .crossDissolve
+    present(menu, animated: true)
+  }
+
+  private func createAndSelectNewTab() {
+    openNewTab(isHidden: false)
+    view.layoutIfNeeded()
+    let index = tabViewControllers.count - 1
+    currentTabIndex = index
+    contentView.addressBarsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * contentView.addressBarPageWidth, y: 0), animated: false)
+    contentView.tabsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * (contentView.frame.width + contentView.tabsStackViewSpacing), y: 0), animated: false)
+  }
+
+  private func presentTabsOverview() {
+    view.layoutIfNeeded()
     let overview = BrowserTabsOverviewViewController(
       tabs: tabViewControllers,
       selectedIndex: currentTabIndex,
@@ -213,16 +229,9 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
         guard let self, index >= 0, index < self.tabViewControllers.count else { return }
         self.currentTabIndex = index
         self.contentView.addressBarsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * self.contentView.addressBarPageWidth, y: 0), animated: false)
-        self.contentView.tabsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * self.contentView.frame.width, y: 0), animated: false)
+        self.contentView.tabsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * (self.contentView.frame.width + self.contentView.tabsStackViewSpacing), y: 0), animated: false)
       },
-      onNewTab: { [weak self] in
-        guard let self else { return }
-        self.openNewTab(isHidden: false)
-        let index = self.tabViewControllers.count - 1
-        self.currentTabIndex = index
-        self.contentView.addressBarsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * self.contentView.addressBarPageWidth, y: 0), animated: false)
-        self.contentView.tabsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * self.contentView.frame.width, y: 0), animated: false)
-      })
+      onNewTab: { [weak self] in self?.createAndSelectNewTab() })
     overview.modalPresentationStyle = .pageSheet
     if let sheet = overview.sheetPresentationController {
       sheet.detents = [.large()]
@@ -281,7 +290,7 @@ private final class BrowserTabsOverviewViewController: UIViewController {
     for index in tabs.indices { stack.addArrangedSubview(makeCard(for: index)) }
     let newButton = UIButton(type: .system)
     var config = UIButton.Configuration.filled()
-    config.title = "＋  New Tab"
+    config.title = "New Tab"
     config.image = UIImage(systemName: "plus")
     config.imagePadding = 8
     config.cornerStyle = .capsule
@@ -298,8 +307,8 @@ private final class BrowserTabsOverviewViewController: UIViewController {
   private func makeCard(for index: Int) -> UIView {
     let tab = tabs[index]
     let card = UIView()
-    card.backgroundColor = .secondarySystemBackground
-    card.layer.cornerRadius = 20
+    card.backgroundColor = UIColor(red: 0.105, green: 0.105, blue: 0.115, alpha: 1)
+    card.layer.cornerRadius = 27
     card.layer.cornerCurve = .continuous
     card.layer.borderWidth = index == selectedIndex ? 2 : 0.5
     card.layer.borderColor = (index == selectedIndex ? UIColor.systemBlue : UIColor.separator).cgColor
@@ -309,19 +318,32 @@ private final class BrowserTabsOverviewViewController: UIViewController {
     preview.backgroundColor = UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.12, alpha: 1) : UIColor(white: 1, alpha: 1) }
     preview.translatesAutoresizingMaskIntoConstraints = false
     card.addSubview(preview)
-    NSLayoutConstraint.activate([preview.topAnchor.constraint(equalTo: card.topAnchor), preview.leadingAnchor.constraint(equalTo: card.leadingAnchor), preview.trailingAnchor.constraint(equalTo: card.trailingAnchor), preview.heightAnchor.constraint(equalToConstant: 150)])
-    if let snapshot = tab.view.snapshotView(afterScreenUpdates: false) {
-      snapshot.translatesAutoresizingMaskIntoConstraints = false
-      snapshot.isUserInteractionEnabled = false
-      preview.addSubview(snapshot)
-      NSLayoutConstraint.activate([snapshot.topAnchor.constraint(equalTo: preview.topAnchor), snapshot.leadingAnchor.constraint(equalTo: preview.leadingAnchor), snapshot.trailingAnchor.constraint(equalTo: preview.trailingAnchor), snapshot.bottomAnchor.constraint(equalTo: preview.bottomAnchor)])
-    } else {
-      let globe = UIImageView(image: UIImage(systemName: "globe"))
-      globe.tintColor = .tertiaryLabel
-      globe.contentMode = .scaleAspectFit
-      globe.translatesAutoresizingMaskIntoConstraints = false
-      preview.addSubview(globe)
-      NSLayoutConstraint.activate([globe.centerXAnchor.constraint(equalTo: preview.centerXAnchor), globe.centerYAnchor.constraint(equalTo: preview.centerYAnchor), globe.widthAnchor.constraint(equalToConstant: 42), globe.heightAnchor.constraint(equalToConstant: 42)])
+    NSLayoutConstraint.activate([preview.topAnchor.constraint(equalTo: card.topAnchor), preview.leadingAnchor.constraint(equalTo: card.leadingAnchor), preview.trailingAnchor.constraint(equalTo: card.trailingAnchor), preview.heightAnchor.constraint(equalToConstant: 190)])
+    let snapshotImageView = UIImageView()
+    snapshotImageView.contentMode = .scaleAspectFill
+    snapshotImageView.clipsToBounds = true
+    snapshotImageView.backgroundColor = UIColor(white: 0.08, alpha: 1)
+    snapshotImageView.translatesAutoresizingMaskIntoConstraints = false
+    preview.addSubview(snapshotImageView)
+    NSLayoutConstraint.activate([
+      snapshotImageView.topAnchor.constraint(equalTo: preview.topAnchor),
+      snapshotImageView.leadingAnchor.constraint(equalTo: preview.leadingAnchor),
+      snapshotImageView.trailingAnchor.constraint(equalTo: preview.trailingAnchor),
+      snapshotImageView.bottomAnchor.constraint(equalTo: preview.bottomAnchor)
+    ])
+    let globe = UIImageView(image: UIImage(systemName: tab.hasLoadedUrl ? "globe" : "safari.fill"))
+    globe.tintColor = UIColor(white: 0.68, alpha: 1)
+    globe.contentMode = .scaleAspectFit
+    globe.translatesAutoresizingMaskIntoConstraints = false
+    preview.addSubview(globe)
+    NSLayoutConstraint.activate([globe.centerXAnchor.constraint(equalTo: preview.centerXAnchor), globe.centerYAnchor.constraint(equalTo: preview.centerYAnchor), globe.widthAnchor.constraint(equalToConstant: 42), globe.heightAnchor.constraint(equalToConstant: 42)])
+    tab.captureTabSnapshot { image in
+      DispatchQueue.main.async {
+        if let image {
+          snapshotImageView.image = image
+          globe.isHidden = true
+        }
+      }
     }
     let title = UILabel()
     title.text = tab.currentURL?.host ?? (tab.hasLoadedUrl ? (tab.currentURL?.absoluteString ?? "Webpage") : "Favorites")
@@ -334,7 +356,9 @@ private final class BrowserTabsOverviewViewController: UIViewController {
     subtitle.textColor = .secondaryLabel
     let labels = UIStackView(arrangedSubviews: [title, subtitle])
     labels.axis = .vertical
-    labels.spacing = 3
+    labels.spacing = 4
+    labels.layoutMargins = UIEdgeInsets(top: 10, left: 0, bottom: 0, right: 0)
+    labels.isLayoutMarginsRelativeArrangement = true
     labels.translatesAutoresizingMaskIntoConstraints = false
     card.addSubview(labels)
     NSLayoutConstraint.activate([labels.topAnchor.constraint(equalTo: preview.bottomAnchor, constant: 10), labels.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14), labels.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14), labels.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -12)])
@@ -356,3 +380,279 @@ private final class BrowserTabsOverviewViewController: UIViewController {
   }
 }
 
+
+/// A custom glass menu matching the floating, grouped menu in Safari on iOS 26.
+/// It is a visual implementation; unavailable Safari-only extension actions are inert.
+private final class BrowserSafariMenuViewController: UIViewController {
+  var onAllTabs: (() -> Void)?
+  var onNewTab: (() -> Void)?
+  var onBookmarks: (() -> Void)?
+
+  private let isOnWebPage: Bool
+  private let panel = UIVisualEffectView(effect: nil)
+  private let rowsStack = UIStackView()
+
+  init(isOnWebPage: Bool) {
+    self.isOnWebPage = isOnWebPage
+    super.init(nibName: nil, bundle: nil)
+    modalPresentationStyle = .overFullScreen
+    modalTransitionStyle = .crossDissolve
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    view.backgroundColor = .clear
+    view.overrideUserInterfaceStyle = .dark
+
+    let dimmer = UIControl()
+    dimmer.backgroundColor = UIColor.black.withAlphaComponent(0.18)
+    dimmer.addTarget(self, action: #selector(dismissMenu), for: .touchUpInside)
+    dimmer.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(dimmer)
+    NSLayoutConstraint.activate([
+      dimmer.topAnchor.constraint(equalTo: view.topAnchor),
+      dimmer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      dimmer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      dimmer.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+    ])
+
+    configurePanelEffect()
+    panel.clipsToBounds = true
+    panel.layer.cornerRadius = 34
+    panel.layer.cornerCurve = .continuous
+    panel.layer.borderWidth = 0.7
+    panel.layer.borderColor = UIColor.white.withAlphaComponent(0.16).cgColor
+    panel.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(panel)
+
+    rowsStack.axis = .vertical
+    rowsStack.spacing = 8
+    rowsStack.translatesAutoresizingMaskIntoConstraints = false
+    panel.contentView.addSubview(rowsStack)
+    NSLayoutConstraint.activate([
+      panel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 11),
+      panel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -11),
+      panel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -4),
+      panel.heightAnchor.constraint(equalToConstant: isOnWebPage ? 520 : 260),
+      rowsStack.topAnchor.constraint(equalTo: panel.contentView.topAnchor, constant: 13),
+      rowsStack.leadingAnchor.constraint(equalTo: panel.contentView.leadingAnchor, constant: 13),
+      rowsStack.trailingAnchor.constraint(equalTo: panel.contentView.trailingAnchor, constant: -13),
+      rowsStack.bottomAnchor.constraint(equalTo: panel.contentView.bottomAnchor, constant: -13)
+    ])
+
+    if isOnWebPage {
+      buildWebsiteMenu()
+    } else {
+      buildStartPageMenu()
+    }
+  }
+
+  private func configurePanelEffect() {
+    if #available(iOS 26.0, *) {
+      let effect = UIGlassEffect(style: .regular)
+      panel.effect = effect
+    } else {
+      panel.effect = UIBlurEffect(style: .systemMaterialDark)
+    }
+  }
+
+  private func buildStartPageMenu() {
+    let group = makeGroup()
+    group.addArrangedSubview(makeMenuRow(icon: "plus", title: "New Tab") { [weak self] in
+      self?.dismiss(animated: true) { self?.onNewTab?() }
+    })
+    group.addArrangedSubview(makeSeparator())
+    group.addArrangedSubview(makeMenuRow(icon: "hand.raised.fill", title: "New Private Tab") { [weak self] in
+      self?.dismiss(animated: true) { self?.onNewTab?() }
+    })
+    rowsStack.addArrangedSubview(group)
+
+    let bottomGroup = makeGroup()
+    let footer = UIStackView()
+    footer.axis = .horizontal
+    footer.distribution = .fillEqually
+    footer.alignment = .center
+    footer.addArrangedSubview(makeLargeMenuAction(icon: "book.closed.fill", title: "Bookmarks") { [weak self] in
+      self?.dismiss(animated: true) { self?.onBookmarks?() }
+    })
+    footer.addArrangedSubview(makeLargeMenuAction(icon: "square.on.square", title: "All Tabs") { [weak self] in
+      self?.dismiss(animated: true) { self?.onAllTabs?() }
+    })
+    bottomGroup.addArrangedSubview(footer)
+    rowsStack.addArrangedSubview(bottomGroup)
+  }
+
+  private func buildWebsiteMenu() {
+    let mainGroup = makeGroup()
+    let items: [(String, String)] = [
+      ("eye.slash", "Hide Distracting Items"),
+      ("hand.raised.slash", "Turn Off Content Blockers"),
+      ("play.circle", "Play All Animations"),
+      ("character.bubble", "Translate to English")
+    ]
+    for (index, item) in items.enumerated() {
+      mainGroup.addArrangedSubview(makeMenuRow(icon: item.0, title: item.1) { [weak self] in
+        self?.dismiss(animated: true)
+      })
+      if index != items.count - 1 { mainGroup.addArrangedSubview(makeSeparator()) }
+    }
+    rowsStack.addArrangedSubview(mainGroup)
+
+    rowsStack.addArrangedSubview(makeGroupSingleRow(icon: "arrow.down.circle", title: "Downloads") { [weak self] in
+      self?.dismiss(animated: true)
+    })
+
+    let extensions = makeGroup()
+    extensions.addArrangedSubview(makeMenuRow(icon: "puzzlepiece.extension", title: "Manage Extensions") { [weak self] in
+      self?.dismiss(animated: true)
+    })
+    extensions.addArrangedSubview(makeSeparator())
+    extensions.addArrangedSubview(makeMenuRow(icon: "person.crop.square.filled.and.at.rectangle", title: "MultiAgent", tint: UIColor(red: 0.35, green: 0.55, blue: 1, alpha: 1)) { [weak self] in
+      self?.dismiss(animated: true)
+    })
+    rowsStack.addArrangedSubview(extensions)
+
+    let footer = UIStackView()
+    footer.axis = .horizontal
+    footer.alignment = .center
+    footer.spacing = 10
+    footer.addArrangedSubview(makeFooterCircle(icon: "doc.text.magnifyingglass"))
+    let textSize = UIStackView()
+    textSize.axis = .horizontal
+    textSize.distribution = .fillEqually
+    textSize.alignment = .center
+    textSize.backgroundColor = UIColor.white.withAlphaComponent(0.08)
+    textSize.layer.cornerRadius = 28
+    textSize.clipsToBounds = true
+    textSize.addArrangedSubview(makeFooterLetter("A", size: 17))
+    textSize.addArrangedSubview(makeFooterLetter("A", size: 22))
+    footer.addArrangedSubview(textSize)
+    footer.addArrangedSubview(makeFooterCircle(icon: "ellipsis"))
+    textSize.heightAnchor.constraint(equalToConstant: 52).isActive = true
+    footer.arrangedSubviews.first?.widthAnchor.constraint(equalToConstant: 52).isActive = true
+    footer.arrangedSubviews.last?.widthAnchor.constraint(equalToConstant: 52).isActive = true
+    rowsStack.addArrangedSubview(footer)
+  }
+
+  private func makeGroup() -> UIStackView {
+    let group = UIStackView()
+    group.axis = .vertical
+    group.spacing = 0
+    group.backgroundColor = UIColor.white.withAlphaComponent(0.055)
+    group.layer.cornerRadius = 25
+    group.layer.cornerCurve = .continuous
+    group.clipsToBounds = true
+    return group
+  }
+
+  private func makeGroupSingleRow(icon: String, title: String, action: @escaping () -> Void) -> UIView {
+    let group = makeGroup()
+    group.addArrangedSubview(makeMenuRow(icon: icon, title: title, action: action))
+    return group
+  }
+
+  private func makeMenuRow(icon: String, title: String, tint: UIColor = .white, action: @escaping () -> Void) -> UIView {
+    let button = ClosureActionControl(action: action)
+    let image = UIImageView(image: UIImage(systemName: icon))
+    image.tintColor = tint
+    image.contentMode = .scaleAspectFit
+    image.translatesAutoresizingMaskIntoConstraints = false
+    button.addSubview(image)
+    let label = UILabel()
+    label.text = title
+    label.font = .systemFont(ofSize: 16, weight: .regular)
+    label.textColor = .white
+    label.translatesAutoresizingMaskIntoConstraints = false
+    button.addSubview(label)
+    NSLayoutConstraint.activate([
+      button.heightAnchor.constraint(equalToConstant: 55),
+      image.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 15),
+      image.centerYAnchor.constraint(equalTo: button.centerYAnchor),
+      image.widthAnchor.constraint(equalToConstant: 21),
+      image.heightAnchor.constraint(equalToConstant: 21),
+      label.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 17),
+      label.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -12),
+      label.centerYAnchor.constraint(equalTo: button.centerYAnchor)
+    ])
+    return button
+  }
+
+  private func makeSeparator() -> UIView {
+    let line = UIView()
+    line.backgroundColor = UIColor.white.withAlphaComponent(0.12)
+    line.heightAnchor.constraint(equalToConstant: 0.7).isActive = true
+    return line
+  }
+
+  private func makeLargeMenuAction(icon: String, title: String, action: @escaping () -> Void) -> UIView {
+    let control = ClosureActionControl(action: action)
+    let image = UIImageView(image: UIImage(systemName: icon))
+    image.tintColor = .white
+    image.contentMode = .scaleAspectFit
+    image.translatesAutoresizingMaskIntoConstraints = false
+    let label = UILabel()
+    label.text = title
+    label.font = .systemFont(ofSize: 13, weight: .medium)
+    label.textColor = .white
+    label.textAlignment = .center
+    label.translatesAutoresizingMaskIntoConstraints = false
+    control.addSubview(image)
+    control.addSubview(label)
+    NSLayoutConstraint.activate([
+      control.heightAnchor.constraint(equalToConstant: 75),
+      image.centerXAnchor.constraint(equalTo: control.centerXAnchor),
+      image.topAnchor.constraint(equalTo: control.topAnchor, constant: 12),
+      image.widthAnchor.constraint(equalToConstant: 24),
+      image.heightAnchor.constraint(equalToConstant: 24),
+      label.topAnchor.constraint(equalTo: image.bottomAnchor, constant: 5),
+      label.centerXAnchor.constraint(equalTo: control.centerXAnchor),
+      label.bottomAnchor.constraint(equalTo: control.bottomAnchor, constant: -7)
+    ])
+    return control
+  }
+
+  private func makeFooterCircle(icon: String) -> UIView {
+    let glass = UIVisualEffectView(effect: nil)
+    if #available(iOS 26.0, *) {
+      let effect = UIGlassEffect(style: .regular)
+      effect.isInteractive = true
+      glass.effect = effect
+    } else {
+      glass.effect = UIBlurEffect(style: .systemMaterialDark)
+    }
+    glass.clipsToBounds = true
+    glass.layer.cornerRadius = 26
+    let image = UIImageView(image: UIImage(systemName: icon))
+    image.tintColor = .white
+    image.contentMode = .scaleAspectFit
+    image.translatesAutoresizingMaskIntoConstraints = false
+    glass.contentView.addSubview(image)
+    NSLayoutConstraint.activate([image.centerXAnchor.constraint(equalTo: glass.contentView.centerXAnchor), image.centerYAnchor.constraint(equalTo: glass.contentView.centerYAnchor), image.widthAnchor.constraint(equalToConstant: 22), image.heightAnchor.constraint(equalToConstant: 22)])
+    glass.heightAnchor.constraint(equalToConstant: 52).isActive = true
+    return glass
+  }
+
+  private func makeFooterLetter(_ letter: String, size: CGFloat) -> UIView {
+    let label = UILabel()
+    label.text = letter
+    label.font = .systemFont(ofSize: size, weight: .medium)
+    label.textColor = .white
+    label.textAlignment = .center
+    return label
+  }
+
+  @objc private func dismissMenu() { dismiss(animated: true) }
+}
+
+private final class ClosureActionControl: UIControl {
+  private let action: () -> Void
+  init(action: @escaping () -> Void) {
+    self.action = action
+    super.init(frame: .zero)
+    addTarget(self, action: #selector(invoke), for: .touchUpInside)
+  }
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+  @objc private func invoke() { action() }
+}

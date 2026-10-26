@@ -23,24 +23,24 @@ class BrowserContainerContentView: UIView {
   
   // Address bar animation constants
   let tabsStackViewSpacing = CGFloat(24)
-  let addressBarWidthOffset = CGFloat(-48)
+  let addressBarWidthOffset = CGFloat(0)
   let addressBarContainerHidingWidthOffset = CGFloat(-200)
-  let addressBarsStackViewSidePadding = CGFloat(24)
-  let addressBarsStackViewSpacing = CGFloat(4)
+  let addressBarsStackViewSidePadding = CGFloat(0)
+  let addressBarsStackViewSpacing = CGFloat(12)
   let addressBarsHidingCenterOffset = CGFloat(30)
   
   // Toolbar collapsing and expanding animation constants
-  let addressBarsScrollViewExpandingHalfwayBottomOffset = CGFloat(-22)
-  let addressBarsScrollViewExpandingFullyBottomOffset = CGFloat(-38)
-  let addressBarsScrollViewCollapsingHalfwayBottomOffset = CGFloat(-8)
-  let addressBarsScrollViewCollapsingFullyBottomOffset = CGFloat(20)
-  let toolbarCollapsingHalfwayBottomOffset = CGFloat(30)
-  let toolbarCollapsingFullyBottomOffset = CGFloat(80)
-  let toolbarExpandingHalfwayBottomOffset = CGFloat(40)
+  let addressBarsScrollViewExpandingHalfwayBottomOffset = CGFloat(0)
+  let addressBarsScrollViewExpandingFullyBottomOffset = CGFloat(0)
+  let addressBarsScrollViewCollapsingHalfwayBottomOffset = CGFloat(0)
+  let addressBarsScrollViewCollapsingFullyBottomOffset = CGFloat(0)
+  let toolbarCollapsingHalfwayBottomOffset = CGFloat(0)
+  let toolbarCollapsingFullyBottomOffset = CGFloat(0)
+  let toolbarExpandingHalfwayBottomOffset = CGFloat(0)
   let toolbarExpandingFullyBottomOffset = CGFloat(0)
 
   var addressBarPageWidth: CGFloat {
-    frame.width + addressBarWidthOffset + addressBarsStackViewSpacing
+    max(addressBarsScrollView.bounds.width, frame.width - 148) + addressBarsStackViewSpacing
   }
   
   var addressBars: [BrowserAddressBar] {
@@ -60,7 +60,7 @@ class BrowserContainerContentView: UIView {
 // MARK: Helper methods
 private extension BrowserContainerContentView {
   func setupView() {
-    backgroundColor = UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(white: 0.04, alpha: 1) : UIColor(white: 0.965, alpha: 1) }
+    backgroundColor = UIColor(red: 0.025, green: 0.025, blue: 0.03, alpha: 1)
     setupTabsScrollView()
     setupTabsStackView()
     setupToolbar()
@@ -112,12 +112,11 @@ private extension BrowserContainerContentView {
     addressBarsScrollView.decelerationRate = .fast
     addSubview(addressBarsScrollView)
     addressBarsScrollView.snp.makeConstraints {
-      // Keep the address field inside the same floating capsule as the side buttons.
-      // The toolbar remains the visual background; this scroll view occupies its center.
-      addressBarsScrollViewBottomConstraint = $0.bottom.equalTo(toolbar.snp.bottom).offset(-6).constraint
+      // Address field is its own glass capsule, aligned with the round glass buttons.
       $0.leading.equalTo(toolbar.snp.leading).offset(62)
       $0.trailing.equalTo(toolbar.snp.trailing).inset(62)
-      $0.height.equalTo(42)
+      addressBarsScrollViewBottomConstraint = $0.bottom.equalTo(toolbar.snp.bottom).constraint
+      $0.height.equalTo(56)
     }
   }
   
@@ -129,9 +128,7 @@ private extension BrowserContainerContentView {
     addressBarsStackView.spacing = addressBarsStackViewSpacing
     addressBarsScrollView.addSubview(addressBarsStackView)
     addressBarsStackView.snp.makeConstraints {
-      $0.top.bottom.equalToSuperview()
-      $0.leading.equalToSuperview().offset(addressBarsStackViewSidePadding)
-      $0.trailing.equalToSuperview().offset(-addressBarsStackViewSidePadding)
+      $0.edges.equalToSuperview()
       $0.height.equalToSuperview()
     }
   }
