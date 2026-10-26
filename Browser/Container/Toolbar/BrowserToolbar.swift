@@ -49,23 +49,20 @@ final class BrowserToolbar: UIView {
 
     buttonStack.axis = .horizontal
     buttonStack.alignment = .center
-    buttonStack.distribution = .fillEqually
+    buttonStack.distribution = .equalSpacing
     buttonStack.spacing = 0
     blurView.contentView.addSubview(buttonStack)
     buttonStack.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.activate([
-      buttonStack.leadingAnchor.constraint(equalTo: blurView.contentView.leadingAnchor, constant: 5),
-      buttonStack.trailingAnchor.constraint(equalTo: blurView.contentView.trailingAnchor, constant: -5),
+      buttonStack.leadingAnchor.constraint(equalTo: blurView.contentView.leadingAnchor, constant: 12),
+      buttonStack.trailingAnchor.constraint(equalTo: blurView.contentView.trailingAnchor, constant: -12),
       buttonStack.topAnchor.constraint(equalTo: blurView.contentView.topAnchor, constant: 2),
       buttonStack.bottomAnchor.constraint(equalTo: blurView.contentView.bottomAnchor, constant: -2)
     ])
 
     let configs: [(String, String, Selector)] = [
       ("Back", "chevron.left", #selector(backTapped)),
-      ("Forward", "chevron.right", #selector(forwardTapped)),
-      ("Share", "square.and.arrow.up", #selector(shareTapped)),
-      ("Bookmarks", "book", #selector(bookmarksTapped)),
-      ("Tabs", "square.on.square", #selector(tabsTapped))
+      ("Menu", "ellipsis", #selector(tabsTapped))
     ]
     for (title, symbol, action) in configs {
       let button = UIButton(type: .system)
@@ -73,11 +70,14 @@ final class BrowserToolbar: UIView {
       button.setImage(UIImage(systemName: symbol), for: .normal)
       button.addTarget(self, action: action, for: .touchUpInside)
       button.tintColor = UIColor { traits in
-        traits.userInterfaceStyle == .dark
-          ? UIColor(red: 0.36, green: 0.68, blue: 1, alpha: 1)
-          : UIColor(red: 0.02, green: 0.35, blue: 0.85, alpha: 1)
+        traits.userInterfaceStyle == .dark ? .white : .label
       }
       button.imageView?.contentMode = .scaleAspectFit
+      button.setPreferredSymbolConfiguration(
+        UIImage.SymbolConfiguration(pointSize: 21, weight: .regular),
+        forImageIn: .normal
+      )
+      button.widthAnchor.constraint(equalToConstant: 48).isActive = true
       buttonStack.addArrangedSubview(button)
       iconButtons.append(button)
     }
