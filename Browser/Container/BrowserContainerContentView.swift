@@ -114,10 +114,10 @@ private extension BrowserContainerContentView {
     addressBarsScrollView.snp.makeConstraints {
       // Keep the address field inside the same floating capsule as the side buttons.
       // The toolbar remains the visual background; this scroll view occupies its center.
-      addressBarsScrollViewBottomConstraint = $0.bottom.equalTo(toolbar.snp.bottom).offset(-4).constraint
+      addressBarsScrollViewBottomConstraint = $0.bottom.equalTo(toolbar.snp.bottom).offset(-6).constraint
       $0.leading.equalTo(toolbar.snp.leading).offset(62)
       $0.trailing.equalTo(toolbar.snp.trailing).inset(62)
-      $0.height.equalTo(48)
+      $0.height.equalTo(44)
     }
   }
   

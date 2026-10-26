@@ -166,6 +166,11 @@ extension BrowserContainerViewController: BrowserAddressBarDelegate {
   func addressBarDidBeginEditing() {
     isAddressBarActive = true
   }
+
+  func addressBarDidTapReload() {
+    guard let tab = tabViewControllers[safe: currentTabIndex], tab.hasLoadedUrl else { return }
+    tab.reloadWebsite()
+  }
   
   func addressBar(_ addressBar: BrowserAddressBar, didReturnWithText text: String) {
     let tabViewController = tabViewControllers[currentTabIndex]
