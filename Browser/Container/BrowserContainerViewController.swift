@@ -11,6 +11,10 @@ class BrowserContainerViewController: UIViewController {
   let contentView = BrowserContainerContentView()
   var tabViewControllers = [BrowserTabViewController]()
   let viewModel: BrowserContainerViewModel
+  // Keep the tab overview in this controller's view hierarchy instead of stacking
+  // a second modal on top of the browser action-sheet modal.
+  private var tabsOverviewController: BrowserTabsOverviewViewController?
+  private var isDismissingTabsOverview = false
   
   // Address bar animation properties
   var isAddressBarActive = false
@@ -40,7 +44,8 @@ class BrowserContainerViewController: UIViewController {
   }
   
   override var childForStatusBarStyle: UIViewController? {
-    tabViewControllers[safe: currentTabIndex]
+    if let tabsOverviewController { return tabsOverviewController }
+    return tabViewControllers[safe: currentTabIndex]
   }
   
   init(viewModel: BrowserContainerViewModel = .init()) {
@@ -265,27 +270,14 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
     contentView.tabsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * (contentView.frame.width + contentView.tabsStackViewSpacing), y: 0), animated: false)
   }
 
-  private func presentTabsOverview(retryCount: Int = 0) {
-    guard isViewLoaded, view.window != nil else { return }
+  private func presentTabsOverview() {
+    guard isViewLoaded, view.window != nil,
+          tabsOverviewController == nil, !isDismissingTabsOverview else { return }
 
-    // Never try to dismiss or replace a controller while UIKit is in the middle
-    // of a modal transition. Wait for the menu's own dismissal completion to
-    // clear the presentation chain, then present the overview once.
-    if let presented = presentedViewController {
-      if presented is BrowserTabsOverviewViewController { return }
-      guard retryCount < 12 else { return }
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) { [weak self] in
-        self?.presentTabsOverview(retryCount: retryCount + 1)
-      }
-      return
-    }
-
-    guard !tabViewControllers.isEmpty else {
+    if tabViewControllers.isEmpty {
       openNewTab(isHidden: false)
       currentTabIndex = max(0, tabViewControllers.count - 1)
       scrollAddressBarToCurrentTab()
-      DispatchQueue.main.async { [weak self] in self?.presentTabsOverview(retryCount: retryCount) }
-      return
     }
 
     view.layoutIfNeeded()
@@ -293,11 +285,15 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
     let overview = BrowserTabsOverviewViewController(
       tabs: tabViewControllers,
       selectedIndex: safeSelectedIndex,
+      closeOverview: { [weak self] completion in
+        self?.dismissTabsOverview(completion: completion)
+      },
       onSelect: { [weak self] index in
         guard let self, self.tabViewControllers.indices.contains(index) else { return }
         self.currentTabIndex = index
         self.scrollAddressBarToCurrentTab()
-        self.contentView.tabsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * (self.contentView.frame.width + self.contentView.tabsStackViewSpacing), y: 0), animated: false)
+        let pageWidth = self.contentView.frame.width + self.contentView.tabsStackViewSpacing
+        self.contentView.tabsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * pageWidth, y: 0), animated: false)
       },
       onNewTab: { [weak self] in self?.createAndSelectNewTab() },
       onSearch: { [weak self] in
@@ -306,13 +302,52 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
         addressBar.textField.becomeFirstResponder()
       },
       onMenu: { [weak self] in
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+        DispatchQueue.main.async { [weak self] in
           self?.presentBrowserMenu()
         }
       })
-    overview.modalPresentationStyle = .overFullScreen
-    overview.modalPresentationCapturesStatusBarAppearance = true
-    present(overview, animated: true)
+
+    tabsOverviewController = overview
+    addChild(overview)
+    overview.view.translatesAutoresizingMaskIntoConstraints = false
+    overview.view.alpha = 0
+    view.addSubview(overview.view)
+    NSLayoutConstraint.activate([
+      overview.view.topAnchor.constraint(equalTo: view.topAnchor),
+      overview.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      overview.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      overview.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+    ])
+    overview.didMove(toParent: self)
+    setNeedsStatusBarAppearanceUpdate()
+    UIView.animate(withDuration: 0.18) {
+      overview.view.alpha = 1
+    }
+  }
+
+  private func dismissTabsOverview(completion: @escaping () -> Void) {
+    guard let overview = tabsOverviewController else {
+      completion()
+      return
+    }
+    guard !isDismissingTabsOverview else { return }
+    isDismissingTabsOverview = true
+
+    overview.willMove(toParent: nil)
+    UIView.animate(withDuration: 0.14, animations: {
+      overview.view.alpha = 0
+    }, completion: { [weak self] _ in
+      overview.view.removeFromSuperview()
+      overview.removeFromParent()
+      if let self {
+        if self.tabsOverviewController === overview {
+          self.tabsOverviewController = nil
+        }
+        self.isDismissingTabsOverview = false
+        self.setNeedsStatusBarAppearanceUpdate()
+      }
+      completion()
+    })
   }
 }
 
@@ -322,6 +357,7 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
 private final class BrowserTabsOverviewViewController: UIViewController {
   private let tabs: [BrowserTabViewController]
   private let selectedIndex: Int
+  private let closeOverview: (@escaping () -> Void) -> Void
   private let onSelect: (Int) -> Void
   private let onNewTab: () -> Void
   private let onSearch: () -> Void
@@ -336,6 +372,7 @@ private final class BrowserTabsOverviewViewController: UIViewController {
   init(
     tabs: [BrowserTabViewController],
     selectedIndex: Int,
+    closeOverview: @escaping (@escaping () -> Void) -> Void,
     onSelect: @escaping (Int) -> Void,
     onNewTab: @escaping () -> Void,
     onSearch: @escaping () -> Void,
@@ -343,13 +380,12 @@ private final class BrowserTabsOverviewViewController: UIViewController {
   ) {
     self.tabs = tabs
     self.selectedIndex = selectedIndex
+    self.closeOverview = closeOverview
     self.onSelect = onSelect
     self.onNewTab = onNewTab
     self.onSearch = onSearch
     self.onMenu = onMenu
     super.init(nibName: nil, bundle: nil)
-    modalPresentationStyle = .overFullScreen
-    modalTransitionStyle = .crossDissolve
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -543,6 +579,7 @@ private final class BrowserTabsOverviewViewController: UIViewController {
 
     let previewLines = UIStackView()
     previewLines.axis = .vertical
+    previewLines.alignment = .leading
     previewLines.spacing = 7
     previewLines.translatesAutoresizingMaskIntoConstraints = false
     previewContent.addSubview(previewLines)
@@ -557,6 +594,10 @@ private final class BrowserTabsOverviewViewController: UIViewController {
     }
 
     NSLayoutConstraint.activate([
+      preview.topAnchor.constraint(equalTo: item.topAnchor),
+      preview.leadingAnchor.constraint(equalTo: item.leadingAnchor),
+      preview.trailingAnchor.constraint(equalTo: item.trailingAnchor),
+      preview.heightAnchor.constraint(equalTo: preview.widthAnchor, multiplier: 1.28),
       previewHeader.topAnchor.constraint(equalTo: previewContent.topAnchor),
       previewHeader.leadingAnchor.constraint(equalTo: previewContent.leadingAnchor),
       previewHeader.trailingAnchor.constraint(equalTo: previewContent.trailingAnchor),
@@ -696,23 +737,30 @@ private final class BrowserTabsOverviewViewController: UIViewController {
   }
 
   @objc private func cardTapped(_ sender: UIControl) {
-    dismiss(animated: true) { self.onSelect(sender.tag) }
+    let index = sender.tag
+    let action = onSelect
+    closeOverview { action(index) }
   }
 
   @objc private func newTabTapped() {
-    dismiss(animated: true) { self.onNewTab() }
+    let action = onNewTab
+    closeOverview { action() }
   }
 
   @objc private func doneTapped() {
-    dismiss(animated: true) { self.onSelect(self.selectedIndex) }
+    let index = selectedIndex
+    let action = onSelect
+    closeOverview { action(index) }
   }
 
   @objc private func searchTapped() {
-    dismiss(animated: true) { self.onSearch() }
+    let action = onSearch
+    closeOverview { action() }
   }
 
   @objc private func menuTapped() {
-    dismiss(animated: true) { self.onMenu() }
+    let action = onMenu
+    closeOverview { action() }
   }
 
   @objc private func privateGroupTapped() {
