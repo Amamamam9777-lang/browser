@@ -230,8 +230,15 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
   }
 
   private func presentBrowserMenu() {
+    // Avoid presenting a second menu during an in-flight dismissal/presentation.
+    guard isViewLoaded, view.window != nil, presentedViewController == nil else { return }
     let menu = BrowserSafariMenuViewController(isOnWebPage: false)
-    menu.onAllTabs = { [weak self] in self?.presentTabsOverview() }
+    menu.onAllTabs = { [weak self] in
+      // UIKit can briefly keep the dismissed overFullScreen controller in the
+      // presentation chain. Defer presentation to the next main-loop turn and
+      // let presentTabsOverview safely resolve that transition.
+      DispatchQueue.main.async { [weak self] in self?.presentTabsOverview() }
+    }
     menu.onNewTab = { [weak self] in self?.createAndSelectNewTab() }
     menu.onBookmarks = { [weak self] in self?.browserToolbarDidTapBookmarks() }
     menu.modalPresentationStyle = .overFullScreen
@@ -240,6 +247,7 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
   }
 
   private func presentPageActionsMenu() {
+    guard isViewLoaded, view.window != nil, presentedViewController == nil else { return }
     let menu = BrowserSafariMenuViewController(isOnWebPage: true)
     menu.modalPresentationStyle = .overFullScreen
     menu.modalTransitionStyle = .crossDissolve
@@ -256,22 +264,61 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
   }
 
   private func presentTabsOverview() {
+    guard isViewLoaded, view.window != nil else { return }
+
+    // If UIKit still reports the menu as presented during its dismissal,
+    // wait for that transition to finish instead of attempting two modal
+    // presentations at once (which can terminate the app on-device).
+    if let presented = presentedViewController {
+      if presented is BrowserTabsOverviewViewController { return }
+      if presented is BrowserSafariMenuViewController {
+        presented.dismiss(animated: false) { [weak self] in
+          DispatchQueue.main.async { [weak self] in self?.presentTabsOverview() }
+        }
+        return
+      }
+      if presented.isBeingDismissed {
+        if let coordinator = presented.transitionCoordinator {
+          coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            DispatchQueue.main.async { [weak self] in self?.presentTabsOverview() }
+          }
+        } else {
+          DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            self?.presentTabsOverview()
+          }
+        }
+      }
+      return
+    }
+
+    guard !tabViewControllers.isEmpty else {
+      openNewTab(isHidden: false)
+      currentTabIndex = 0
+      scrollAddressBarToCurrentTab()
+      presentTabsOverview()
+      return
+    }
+
     view.layoutIfNeeded()
+    let safeSelectedIndex = min(max(0, currentTabIndex), tabViewControllers.count - 1)
     let overview = BrowserTabsOverviewViewController(
       tabs: tabViewControllers,
-      selectedIndex: currentTabIndex,
+      selectedIndex: safeSelectedIndex,
       onSelect: { [weak self] index in
-        guard let self, index >= 0, index < self.tabViewControllers.count else { return }
+        guard let self, self.tabViewControllers.indices.contains(index) else { return }
         self.currentTabIndex = index
         self.scrollAddressBarToCurrentTab()
         self.contentView.tabsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * (self.contentView.frame.width + self.contentView.tabsStackViewSpacing), y: 0), animated: false)
       },
       onNewTab: { [weak self] in self?.createAndSelectNewTab() },
       onSearch: { [weak self] in
-        guard let self else { return }
-        self.currentAddressBar.textField.becomeFirstResponder()
+        guard let self,
+              let addressBar = self.contentView.addressBars[safe: self.currentTabIndex] else { return }
+        addressBar.textField.becomeFirstResponder()
       },
-      onMenu: { [weak self] in self?.presentBrowserMenu() })
+      onMenu: { [weak self] in
+        DispatchQueue.main.async { [weak self] in self?.presentBrowserMenu() }
+      })
     overview.modalPresentationStyle = .overFullScreen
     overview.modalPresentationCapturesStatusBarAppearance = true
     present(overview, animated: true)
@@ -654,6 +701,8 @@ private final class BrowserSafariMenuViewController: UIViewController {
   private let isOnWebPage: Bool
   private let panel = UIVisualEffectView(effect: nil)
   private let rowsStack = UIStackView()
+  private var panelBottomConstraint: NSLayoutConstraint?
+  private var isClosing = false
 
   init(isOnWebPage: Bool) {
     self.isOnWebPage = isOnWebPage
@@ -694,11 +743,15 @@ private final class BrowserSafariMenuViewController: UIViewController {
     rowsStack.spacing = 8
     rowsStack.translatesAutoresizingMaskIntoConstraints = false
     panel.contentView.addSubview(rowsStack)
+    let panelHeight: CGFloat = isOnWebPage ? 470 : 260
+    let heightConstraint = panel.heightAnchor.constraint(equalToConstant: panelHeight)
+    let bottomConstraint = panel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -4)
+    panelBottomConstraint = bottomConstraint
     NSLayoutConstraint.activate([
       panel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 11),
       panel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -11),
-      panel.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -4),
-      panel.heightAnchor.constraint(equalToConstant: isOnWebPage ? 470 : 260),
+      bottomConstraint,
+      heightConstraint,
       rowsStack.topAnchor.constraint(equalTo: panel.contentView.topAnchor, constant: 13),
       rowsStack.leadingAnchor.constraint(equalTo: panel.contentView.leadingAnchor, constant: 13),
       rowsStack.trailingAnchor.constraint(equalTo: panel.contentView.trailingAnchor, constant: -13),
@@ -709,6 +762,15 @@ private final class BrowserSafariMenuViewController: UIViewController {
       buildWebsiteMenu()
     } else {
       buildStartPageMenu()
+    }
+
+    // The previous menu occupied nearly the full screen width and height.
+    // Scale the entire glass card by 35%, including its rows and typography,
+    // while offsetting the layout anchor so it still sits on the bottom edge.
+    if !isOnWebPage {
+      let scale: CGFloat = 0.65
+      panelBottomConstraint?.constant = -4 + (panelHeight * (1 - scale) / 2)
+      panel.transform = CGAffineTransform(scaleX: scale, y: scale)
     }
   }
 
@@ -724,11 +786,15 @@ private final class BrowserSafariMenuViewController: UIViewController {
   private func buildStartPageMenu() {
     let group = makeGroup()
     group.addArrangedSubview(makeMenuRow(icon: "plus", title: "New Tab") { [weak self] in
-      self?.dismiss(animated: true) { self?.onNewTab?() }
+      guard let self else { return }
+      let callback = self.onNewTab
+      self.closeMenu { callback?() }
     })
     group.addArrangedSubview(makeSeparator())
     group.addArrangedSubview(makeMenuRow(icon: "hand.raised.fill", title: "New Private Tab") { [weak self] in
-      self?.dismiss(animated: true) { self?.onNewTab?() }
+      guard let self else { return }
+      let callback = self.onNewTab
+      self.closeMenu { callback?() }
     })
     rowsStack.addArrangedSubview(group)
 
@@ -738,10 +804,14 @@ private final class BrowserSafariMenuViewController: UIViewController {
     footer.distribution = .fillEqually
     footer.alignment = .center
     footer.addArrangedSubview(makeLargeMenuAction(icon: "book.closed.fill", title: "Bookmarks") { [weak self] in
-      self?.dismiss(animated: true) { self?.onBookmarks?() }
+      guard let self else { return }
+      let callback = self.onBookmarks
+      self.closeMenu { callback?() }
     })
     footer.addArrangedSubview(makeLargeMenuAction(icon: "square.on.square", title: "All Tabs") { [weak self] in
-      self?.dismiss(animated: true) { self?.onAllTabs?() }
+      guard let self else { return }
+      let callback = self.onAllTabs
+      self.closeMenu { callback?() }
     })
     bottomGroup.addArrangedSubview(footer)
     rowsStack.addArrangedSubview(bottomGroup)
@@ -757,19 +827,19 @@ private final class BrowserSafariMenuViewController: UIViewController {
     ]
     for (index, item) in items.enumerated() {
       mainGroup.addArrangedSubview(makeMenuRow(icon: item.0, title: item.1) { [weak self] in
-        self?.dismiss(animated: true)
+        self?.closeMenu()
       })
       if index != items.count - 1 { mainGroup.addArrangedSubview(makeSeparator()) }
     }
     rowsStack.addArrangedSubview(mainGroup)
 
     rowsStack.addArrangedSubview(makeGroupSingleRow(icon: "arrow.down.circle", title: "Downloads") { [weak self] in
-      self?.dismiss(animated: true)
+      self?.closeMenu()
     })
 
     let extensions = makeGroup()
     extensions.addArrangedSubview(makeMenuRow(icon: "puzzlepiece.extension", title: "Manage Extensions") { [weak self] in
-      self?.dismiss(animated: true)
+      self?.closeMenu()
     })
     rowsStack.addArrangedSubview(extensions)
 
@@ -902,7 +972,14 @@ private final class BrowserSafariMenuViewController: UIViewController {
     return label
   }
 
-  @objc private func dismissMenu() { dismiss(animated: true) }
+  private func closeMenu(completion: (() -> Void)? = nil) {
+    guard !isClosing else { return }
+    isClosing = true
+    view.isUserInteractionEnabled = false
+    dismiss(animated: true, completion: completion)
+  }
+
+  @objc private func dismissMenu() { closeMenu() }
 }
 
 private final class ClosureActionControl: UIControl {
