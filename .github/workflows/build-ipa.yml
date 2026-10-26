@@ -3,20 +3,30 @@ name: Build Browser IPA
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-      - master
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    runs-on: macos-15-windows
+    runs-on: macos-15-widows-2025
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build IPA
+      - name: Check project and scheme
         run: |
+          set -e
+          test -d Browser.xcodeproj || {
+            echo "ERROR: Browser.xcodeproj not found"
+            exit 1
+          }
+          xcodebuild -list -project Browser.xcodeproj
+
+      - name: Build for iPhone
+        run: |
+          set -o pipefail
           xcodebuild \
             -project Browser.xcodeproj \
             -scheme Browser \
@@ -28,12 +38,26 @@ jobs:
 
       - name: Package IPA
         run: |
-          mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/Browser.app Payload/
-          zip -r Browser-unsigned.ipa Payload
+          set -e
+          APP="build/Build/Products/Release-iphoneos/Browser.app"
 
-      - name: Upload IPA
+          if [ ! -d "$APP" ]; then
+            echo "ERROR: Browser.app was not created at $APP"
+            find build/Build/Products -maxdepth 4 -name "*.app" -print
+            exit 1
+          fi
+
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          /usr/bin/zip -qry Browser-unsigned.ipa Payload
+
+          test -s Browser-unsigned.ipa
+          unzip -l Browser-unsigned.ipa | head -30
+
+      - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
           name: Browser-unsigned-IPA
           path: Browser-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
