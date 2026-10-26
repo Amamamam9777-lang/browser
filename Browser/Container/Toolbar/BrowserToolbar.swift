@@ -87,12 +87,12 @@ final class BrowserToolbar: UIView {
   private func updateStyle() {
     layer.borderWidth = 1.0
     layer.borderColor = UIColor { traits in
-      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.30)
+      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.36)
     }.cgColor
     layer.shadowColor = UIColor.black.cgColor
-    layer.shadowOpacity = traitCollection.userInterfaceStyle == .dark ? 0.28 : 0.14
-    layer.shadowRadius = 20
-    layer.shadowOffset = CGSize(width: 0, height: 7)
+    layer.shadowOpacity = traitCollection.userInterfaceStyle == .dark ? 0.34 : 0.20
+    layer.shadowRadius = 24
+    layer.shadowOffset = CGSize(width: 0, height: 8)
     iconButtons.forEach {
       $0.setPreferredSymbolConfiguration(
         UIImage.SymbolConfiguration(pointSize: 19, weight: .regular),
