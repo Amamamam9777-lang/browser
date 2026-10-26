@@ -266,152 +266,380 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
         self.scrollAddressBarToCurrentTab()
         self.contentView.tabsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * (self.contentView.frame.width + self.contentView.tabsStackViewSpacing), y: 0), animated: false)
       },
-      onNewTab: { [weak self] in self?.createAndSelectNewTab() })
-    overview.modalPresentationStyle = .pageSheet
-    if let sheet = overview.sheetPresentationController {
-      sheet.detents = [.large()]
-      sheet.prefersGrabberVisible = true
-      sheet.preferredCornerRadius = 30
-    }
+      onNewTab: { [weak self] in self?.createAndSelectNewTab() },
+      onSearch: { [weak self] in
+        guard let self else { return }
+        self.currentAddressBar.textField.becomeFirstResponder()
+      },
+      onMenu: { [weak self] in self?.presentBrowserMenu() })
+    overview.modalPresentationStyle = .overFullScreen
+    overview.modalPresentationCapturesStatusBarAppearance = true
     present(overview, animated: true)
   }
 }
 
-/// A visual tab switcher inspired by Safari's card overview.
+/// A full-screen Safari-style tab overview. Thumbnail sizing and placement follow
+/// the supplied reference: narrow portrait previews, labels underneath, and a
+/// compact translucent tab-group control row at the bottom.
 private final class BrowserTabsOverviewViewController: UIViewController {
   private let tabs: [BrowserTabViewController]
   private let selectedIndex: Int
   private let onSelect: (Int) -> Void
   private let onNewTab: () -> Void
+  private let onSearch: () -> Void
+  private let onMenu: () -> Void
+  private let scrollView = UIScrollView()
   private let stack = UIStackView()
+  private let gradientLayer = CAGradientLayer()
+  private let groupPrivateButton = UIButton(type: .system)
+  private let groupStartButton = UIButton(type: .system)
+  private var selectedGroupIsStartPage = true
 
-  init(tabs: [BrowserTabViewController], selectedIndex: Int, onSelect: @escaping (Int) -> Void, onNewTab: @escaping () -> Void) {
+  init(
+    tabs: [BrowserTabViewController],
+    selectedIndex: Int,
+    onSelect: @escaping (Int) -> Void,
+    onNewTab: @escaping () -> Void,
+    onSearch: @escaping () -> Void,
+    onMenu: @escaping () -> Void
+  ) {
     self.tabs = tabs
     self.selectedIndex = selectedIndex
     self.onSelect = onSelect
     self.onNewTab = onNewTab
+    self.onSearch = onSearch
+    self.onMenu = onMenu
     super.init(nibName: nil, bundle: nil)
+    modalPresentationStyle = .overFullScreen
+    modalTransitionStyle = .crossDissolve
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+  override var preferredStatusBarStyle: UIStatusBarStyle { .lightContent }
+
   override func viewDidLoad() {
     super.viewDidLoad()
-    view.backgroundColor = UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.055, alpha: 1) : UIColor(white: 0.95, alpha: 1) }
-    let title = UILabel()
-    title.text = "Tabs"
-    title.font = .systemFont(ofSize: 30, weight: .bold)
-    title.textColor = .label
-    let count = UILabel()
-    count.text = "\(tabs.count) open"
-    count.font = .systemFont(ofSize: 14, weight: .medium)
-    count.textColor = .secondaryLabel
-    let header = UIStackView(arrangedSubviews: [title, UIView(), count])
-    header.alignment = .center
-    header.translatesAutoresizingMaskIntoConstraints = false
-    view.addSubview(header)
-    NSLayoutConstraint.activate([header.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 18), header.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 22), header.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -22)])
+    overrideUserInterfaceStyle = .dark
+    view.backgroundColor = UIColor(red: 0.035, green: 0.04, blue: 0.055, alpha: 1)
+    buildBackground()
+    buildTopControls()
+    buildTabCards()
+    buildBottomControls()
+  }
 
-    let scroll = UIScrollView()
-    scroll.alwaysBounceVertical = true
-    scroll.translatesAutoresizingMaskIntoConstraints = false
-    view.addSubview(scroll)
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    gradientLayer.frame = view.bounds
+  }
+
+  private func buildBackground() {
+    gradientLayer.colors = [
+      UIColor(red: 0.075, green: 0.09, blue: 0.15, alpha: 1).cgColor,
+      UIColor(red: 0.055, green: 0.12, blue: 0.14, alpha: 1).cgColor,
+      UIColor(red: 0.045, green: 0.05, blue: 0.065, alpha: 1).cgColor,
+      UIColor(red: 0.035, green: 0.04, blue: 0.055, alpha: 1).cgColor
+    ]
+    gradientLayer.locations = [0, 0.38, 0.72, 1]
+    gradientLayer.startPoint = CGPoint(x: 0.05, y: 0)
+    gradientLayer.endPoint = CGPoint(x: 0.95, y: 1)
+    view.layer.insertSublayer(gradientLayer, at: 0)
+
+    let vignette = UIView()
+    vignette.backgroundColor = UIColor.black.withAlphaComponent(0.15)
+    vignette.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(vignette)
+    NSLayoutConstraint.activate([
+      vignette.topAnchor.constraint(equalTo: view.topAnchor),
+      vignette.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      vignette.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      vignette.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+    ])
+  }
+
+  private func buildTopControls() {
+    let menu = makeGlassCircle(symbol: "ellipsis", accessibilityLabel: "More actions", action: #selector(menuTapped))
+    let search = makeGlassCircle(symbol: "magnifyingglass", accessibilityLabel: "Search tabs", action: #selector(searchTapped))
+    view.addSubview(menu)
+    view.addSubview(search)
+    menu.translatesAutoresizingMaskIntoConstraints = false
+    search.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      menu.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 2),
+      menu.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+      menu.widthAnchor.constraint(equalToConstant: 54),
+      menu.heightAnchor.constraint(equalToConstant: 54),
+      search.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 2),
+      search.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+      search.widthAnchor.constraint(equalToConstant: 54),
+      search.heightAnchor.constraint(equalToConstant: 54)
+    ])
+  }
+
+  private func makeGlassCircle(symbol: String, accessibilityLabel: String, action: Selector) -> UIView {
+    let glass = UIVisualEffectView(effect: nil)
+    glass.clipsToBounds = true
+    glass.layer.cornerRadius = 27
+    glass.layer.cornerCurve = .continuous
+    glass.layer.borderWidth = 0.8
+    glass.layer.borderColor = UIColor.white.withAlphaComponent(0.11).cgColor
+    glass.backgroundColor = UIColor(white: 0.08, alpha: 0.42)
+    if #available(iOS 26.0, *) {
+      let effect = UIGlassEffect(style: .regular)
+      effect.isInteractive = true
+      glass.effect = effect
+    } else {
+      glass.effect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+    }
+    let button = UIButton(type: .system)
+    button.tintColor = UIColor(white: 0.96, alpha: 1)
+    button.accessibilityLabel = accessibilityLabel
+    button.setImage(UIImage(systemName: symbol), for: .normal)
+    button.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: symbol == "ellipsis" ? 21 : 25, weight: .regular), forImageIn: .normal)
+    button.addTarget(self, action: action, for: .touchUpInside)
+    button.translatesAutoresizingMaskIntoConstraints = false
+    glass.contentView.addSubview(button)
+    NSLayoutConstraint.activate([
+      button.topAnchor.constraint(equalTo: glass.contentView.topAnchor),
+      button.leadingAnchor.constraint(equalTo: glass.contentView.leadingAnchor),
+      button.trailingAnchor.constraint(equalTo: glass.contentView.trailingAnchor),
+      button.bottomAnchor.constraint(equalTo: glass.contentView.bottomAnchor)
+    ])
+    return glass
+  }
+
+  private func buildTabCards() {
+    scrollView.showsVerticalScrollIndicator = false
+    scrollView.alwaysBounceVertical = true
+    scrollView.clipsToBounds = true
+    scrollView.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(scrollView)
+
     stack.axis = .vertical
-    stack.spacing = 16
+    stack.alignment = .center
+    stack.spacing = 34
     stack.translatesAutoresizingMaskIntoConstraints = false
-    scroll.addSubview(stack)
-    NSLayoutConstraint.activate([scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 18), scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18), scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18), scroll.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -86), stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor), stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor), stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor), stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor), stack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor)])
+    scrollView.addSubview(stack)
+    NSLayoutConstraint.activate([
+      scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 75),
+      scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -104),
+      stack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+      stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+      stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+      stack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+      stack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor)
+    ])
 
-    for index in tabs.indices { stack.addArrangedSubview(makeCard(for: index)) }
-    let newButton = UIButton(type: .system)
-    var config = UIButton.Configuration.filled()
-    config.title = "New Tab"
-    config.image = UIImage(systemName: "plus")
-    config.imagePadding = 8
-    config.cornerStyle = .capsule
-    config.baseBackgroundColor = .systemBlue
-    config.baseForegroundColor = .white
-    config.contentInsets = NSDirectionalEdgeInsets(top: 15, leading: 22, bottom: 15, trailing: 22)
-    newButton.configuration = config
-    newButton.addTarget(self, action: #selector(newTabTapped), for: .touchUpInside)
-    newButton.translatesAutoresizingMaskIntoConstraints = false
-    view.addSubview(newButton)
-    NSLayoutConstraint.activate([newButton.centerXAnchor.constraint(equalTo: view.centerXAnchor), newButton.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -14)])
+    for index in tabs.indices {
+      stack.addArrangedSubview(makeCard(for: index))
+    }
   }
 
   private func makeCard(for index: Int) -> UIView {
     let tab = tabs[index]
-    let card = UIView()
-    card.backgroundColor = UIColor(red: 0.105, green: 0.105, blue: 0.115, alpha: 1)
-    card.layer.cornerRadius = 27
-    card.layer.cornerCurve = .continuous
-    card.layer.borderWidth = index == selectedIndex ? 2 : 0.5
-    card.layer.borderColor = (index == selectedIndex ? UIColor.systemBlue : UIColor.separator).cgColor
-    card.clipsToBounds = true
+    let item = UIView()
+    item.translatesAutoresizingMaskIntoConstraints = false
+    item.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, multiplier: 0.67).isActive = true
 
     let preview = UIView()
-    preview.backgroundColor = UIColor { $0.userInterfaceStyle == .dark ? UIColor(white: 0.12, alpha: 1) : UIColor(white: 1, alpha: 1) }
+    preview.backgroundColor = UIColor(white: 0.075, alpha: 1)
+    preview.clipsToBounds = true
+    preview.layer.cornerRadius = 28
+    preview.layer.cornerCurve = .continuous
+    preview.layer.borderWidth = 0.7
+    preview.layer.borderColor = UIColor.white.withAlphaComponent(index == selectedIndex ? 0.13 : 0.08).cgColor
     preview.translatesAutoresizingMaskIntoConstraints = false
-    card.addSubview(preview)
-    NSLayoutConstraint.activate([preview.topAnchor.constraint(equalTo: card.topAnchor), preview.leadingAnchor.constraint(equalTo: card.leadingAnchor), preview.trailingAnchor.constraint(equalTo: card.trailingAnchor), preview.heightAnchor.constraint(equalToConstant: 190)])
+    item.addSubview(preview)
+
     let snapshotImageView = UIImageView()
-    snapshotImageView.contentMode = .scaleAspectFill
+    snapshotImageView.contentMode = .scaleToFill
     snapshotImageView.clipsToBounds = true
-    snapshotImageView.backgroundColor = UIColor(white: 0.08, alpha: 1)
+    snapshotImageView.backgroundColor = UIColor(white: 0.07, alpha: 1)
     snapshotImageView.translatesAutoresizingMaskIntoConstraints = false
     preview.addSubview(snapshotImageView)
+
+    // Preserve the screenshot's own portrait proportions and crop only the lower
+    // portion, like Safari's tab thumbnail rather than stretching the whole page.
     NSLayoutConstraint.activate([
+      preview.topAnchor.constraint(equalTo: item.topAnchor),
+      preview.leadingAnchor.constraint(equalTo: item.leadingAnchor),
+      preview.trailingAnchor.constraint(equalTo: item.trailingAnchor),
+      preview.heightAnchor.constraint(equalTo: preview.widthAnchor, multiplier: 1.40),
       snapshotImageView.topAnchor.constraint(equalTo: preview.topAnchor),
       snapshotImageView.leadingAnchor.constraint(equalTo: preview.leadingAnchor),
       snapshotImageView.trailingAnchor.constraint(equalTo: preview.trailingAnchor),
-      snapshotImageView.bottomAnchor.constraint(equalTo: preview.bottomAnchor)
+      snapshotImageView.heightAnchor.constraint(equalTo: preview.widthAnchor, multiplier: 2.15)
     ])
-    let globe = UIImageView(image: UIImage(systemName: tab.hasLoadedUrl ? "globe" : "safari.fill"))
-    globe.tintColor = UIColor(white: 0.68, alpha: 1)
-    globe.contentMode = .scaleAspectFit
-    globe.translatesAutoresizingMaskIntoConstraints = false
-    preview.addSubview(globe)
-    NSLayoutConstraint.activate([globe.centerXAnchor.constraint(equalTo: preview.centerXAnchor), globe.centerYAnchor.constraint(equalTo: preview.centerYAnchor), globe.widthAnchor.constraint(equalToConstant: 42), globe.heightAnchor.constraint(equalToConstant: 42)])
+
+    let placeholder = UIImageView(image: UIImage(systemName: tab.hasLoadedUrl ? "globe" : "safari.fill"))
+    placeholder.tintColor = UIColor(white: 0.7, alpha: 1)
+    placeholder.contentMode = .scaleAspectFit
+    placeholder.translatesAutoresizingMaskIntoConstraints = false
+    preview.addSubview(placeholder)
+    NSLayoutConstraint.activate([
+      placeholder.centerXAnchor.constraint(equalTo: preview.centerXAnchor),
+      placeholder.centerYAnchor.constraint(equalTo: preview.centerYAnchor),
+      placeholder.widthAnchor.constraint(equalToConstant: 38),
+      placeholder.heightAnchor.constraint(equalToConstant: 38)
+    ])
     tab.captureTabSnapshot { image in
       DispatchQueue.main.async {
         if let image {
           snapshotImageView.image = image
-          globe.isHidden = true
+          placeholder.isHidden = true
         }
       }
     }
+
+    let star = UIImageView(image: UIImage(systemName: "star.fill"))
+    star.tintColor = UIColor(white: 0.68, alpha: 1)
+    star.contentMode = .scaleAspectFit
+    star.translatesAutoresizingMaskIntoConstraints = false
     let title = UILabel()
-    title.text = tab.currentURL?.host ?? (tab.hasLoadedUrl ? (tab.currentURL?.absoluteString ?? "Webpage") : "Favorites")
-    title.font = .systemFont(ofSize: 15, weight: .semibold)
-    title.textColor = .label
+    title.text = tab.hasLoadedUrl ? (tab.currentURL?.host ?? "Webpage") : "Start Page"
+    title.textColor = UIColor(white: 0.96, alpha: 1)
+    title.font = .systemFont(ofSize: 14, weight: .medium)
     title.lineBreakMode = .byTruncatingTail
-    let subtitle = UILabel()
-    subtitle.text = index == selectedIndex ? "Current Tab" : "Tab \(index + 1)"
-    subtitle.font = .systemFont(ofSize: 12, weight: .regular)
-    subtitle.textColor = .secondaryLabel
-    let labels = UIStackView(arrangedSubviews: [title, subtitle])
-    labels.axis = .vertical
-    labels.spacing = 4
-    labels.layoutMargins = UIEdgeInsets(top: 10, left: 0, bottom: 0, right: 0)
-    labels.isLayoutMarginsRelativeArrangement = true
-    labels.translatesAutoresizingMaskIntoConstraints = false
-    card.addSubview(labels)
-    NSLayoutConstraint.activate([labels.topAnchor.constraint(equalTo: preview.bottomAnchor, constant: 10), labels.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14), labels.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14), labels.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -12)])
+    let titleRow = UIStackView(arrangedSubviews: [star, title])
+    titleRow.axis = .horizontal
+    titleRow.alignment = .center
+    titleRow.spacing = 9
+    titleRow.translatesAutoresizingMaskIntoConstraints = false
+    item.addSubview(titleRow)
+    NSLayoutConstraint.activate([
+      star.widthAnchor.constraint(equalToConstant: 14),
+      star.heightAnchor.constraint(equalToConstant: 14),
+      titleRow.topAnchor.constraint(equalTo: preview.bottomAnchor, constant: 10),
+      titleRow.centerXAnchor.constraint(equalTo: item.centerXAnchor),
+      titleRow.bottomAnchor.constraint(equalTo: item.bottomAnchor, constant: -2)
+    ])
+
     let tap = UIControl()
     tap.backgroundColor = .clear
     tap.translatesAutoresizingMaskIntoConstraints = false
     tap.tag = index
     tap.addTarget(self, action: #selector(cardTapped(_:)), for: .touchUpInside)
-    card.addSubview(tap)
-    NSLayoutConstraint.activate([tap.topAnchor.constraint(equalTo: card.topAnchor), tap.leadingAnchor.constraint(equalTo: card.leadingAnchor), tap.trailingAnchor.constraint(equalTo: card.trailingAnchor), tap.bottomAnchor.constraint(equalTo: card.bottomAnchor)])
-    return card
+    item.addSubview(tap)
+    NSLayoutConstraint.activate([
+      tap.topAnchor.constraint(equalTo: preview.topAnchor),
+      tap.leadingAnchor.constraint(equalTo: preview.leadingAnchor),
+      tap.trailingAnchor.constraint(equalTo: preview.trailingAnchor),
+      tap.bottomAnchor.constraint(equalTo: preview.bottomAnchor)
+    ])
+    return item
+  }
+
+  private func buildBottomControls() {
+    let plus = makeGlassCircle(symbol: "plus", accessibilityLabel: "New tab", action: #selector(newTabTapped))
+    let confirm = UIButton(type: .system)
+    confirm.setImage(UIImage(systemName: "checkmark"), for: .normal)
+    confirm.tintColor = .white
+    confirm.backgroundColor = UIColor(red: 0.35, green: 0.59, blue: 0.98, alpha: 1)
+    confirm.layer.cornerRadius = 28
+    confirm.layer.cornerCurve = .continuous
+    confirm.layer.borderWidth = 1
+    confirm.layer.borderColor = UIColor.white.withAlphaComponent(0.24).cgColor
+    confirm.setPreferredSymbolConfiguration(UIImage.SymbolConfiguration(pointSize: 26, weight: .regular), forImageIn: .normal)
+    confirm.accessibilityLabel = "Done"
+    confirm.addTarget(self, action: #selector(doneTapped), for: .touchUpInside)
+
+    let group = UIView()
+    group.backgroundColor = UIColor(white: 0.13, alpha: 0.78)
+    group.layer.cornerRadius = 28
+    group.layer.cornerCurve = .continuous
+    group.layer.borderWidth = 0.6
+    group.layer.borderColor = UIColor.white.withAlphaComponent(0.06).cgColor
+    group.translatesAutoresizingMaskIntoConstraints = false
+
+    groupPrivateButton.setTitle("Private", for: .normal)
+    groupPrivateButton.setTitleColor(UIColor(white: 0.59, alpha: 1), for: .normal)
+    groupPrivateButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .medium)
+    groupPrivateButton.layer.cornerRadius = 26
+    groupPrivateButton.addTarget(self, action: #selector(privateGroupTapped), for: .touchUpInside)
+
+    groupStartButton.setTitle("Start…", for: .normal)
+    groupStartButton.setTitleColor(.white, for: .normal)
+    groupStartButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
+    groupStartButton.backgroundColor = UIColor(white: 0.28, alpha: 1)
+    groupStartButton.layer.cornerRadius = 26
+    groupStartButton.layer.borderWidth = 0.8
+    groupStartButton.layer.borderColor = UIColor.white.withAlphaComponent(0.13).cgColor
+    groupStartButton.addTarget(self, action: #selector(startGroupTapped), for: .touchUpInside)
+
+    let groupStack = UIStackView(arrangedSubviews: [groupPrivateButton, groupStartButton])
+    groupStack.axis = .horizontal
+    groupStack.distribution = .fillEqually
+    groupStack.spacing = 0
+    groupStack.translatesAutoresizingMaskIntoConstraints = false
+    group.addSubview(groupStack)
+    NSLayoutConstraint.activate([
+      groupStack.topAnchor.constraint(equalTo: group.topAnchor, constant: 4),
+      groupStack.leadingAnchor.constraint(equalTo: group.leadingAnchor, constant: 4),
+      groupStack.trailingAnchor.constraint(equalTo: group.trailingAnchor, constant: -4),
+      groupStack.bottomAnchor.constraint(equalTo: group.bottomAnchor, constant: -4)
+    ])
+
+    let row = UIStackView(arrangedSubviews: [plus, group, confirm])
+    row.axis = .horizontal
+    row.alignment = .center
+    row.spacing = -2
+    row.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(row)
+    plus.translatesAutoresizingMaskIntoConstraints = false
+    confirm.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      plus.widthAnchor.constraint(equalToConstant: 58),
+      plus.heightAnchor.constraint(equalToConstant: 58),
+      group.widthAnchor.constraint(equalToConstant: 202),
+      group.heightAnchor.constraint(equalToConstant: 58),
+      confirm.widthAnchor.constraint(equalToConstant: 58),
+      confirm.heightAnchor.constraint(equalToConstant: 58),
+      row.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+      row.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -10)
+    ])
+    updateGroupSelection()
+  }
+
+  private func updateGroupSelection() {
+    groupPrivateButton.backgroundColor = selectedGroupIsStartPage ? .clear : UIColor(white: 0.28, alpha: 1)
+    groupPrivateButton.setTitleColor(selectedGroupIsStartPage ? UIColor(white: 0.59, alpha: 1) : .white, for: .normal)
+    groupPrivateButton.titleLabel?.font = .systemFont(ofSize: 15, weight: selectedGroupIsStartPage ? .medium : .semibold)
+    groupStartButton.backgroundColor = selectedGroupIsStartPage ? UIColor(white: 0.28, alpha: 1) : .clear
+    groupStartButton.setTitleColor(selectedGroupIsStartPage ? .white : UIColor(white: 0.59, alpha: 1), for: .normal)
+    groupStartButton.titleLabel?.font = .systemFont(ofSize: 15, weight: selectedGroupIsStartPage ? .semibold : .medium)
+    groupStartButton.layer.borderWidth = selectedGroupIsStartPage ? 0.8 : 0
   }
 
   @objc private func cardTapped(_ sender: UIControl) {
     dismiss(animated: true) { self.onSelect(sender.tag) }
   }
+
   @objc private func newTabTapped() {
     dismiss(animated: true) { self.onNewTab() }
+  }
+
+  @objc private func doneTapped() {
+    dismiss(animated: true) { self.onSelect(self.selectedIndex) }
+  }
+
+  @objc private func searchTapped() {
+    dismiss(animated: true) { self.onSearch() }
+  }
+
+  @objc private func menuTapped() {
+    dismiss(animated: true) { self.onMenu() }
+  }
+
+  @objc private func privateGroupTapped() {
+    selectedGroupIsStartPage = false
+    updateGroupSelection()
+  }
+
+  @objc private func startGroupTapped() {
+    selectedGroupIsStartPage = true
+    updateGroupSelection()
   }
 }
 
