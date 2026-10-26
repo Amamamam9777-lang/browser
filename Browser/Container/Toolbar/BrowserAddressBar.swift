@@ -16,7 +16,6 @@ protocol BrowserAddressBarDelegate: AnyObject {
 
 class BrowserAddressBar: UIView {
   private let progressView = UIProgressView()
-  private let shadowView = UIView()
   private let glassView = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
   private var text: String?
   private let textFieldSidePadding = CGFloat(4)
@@ -38,11 +37,6 @@ class BrowserAddressBar: UIView {
     fatalError("init(coder:) has not been implemented")
   }
   
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    shadowView.layer.shadowPath = UIBezierPath(rect: containerView.frame).cgPath
-  }
-  
   func setSideButtonsHidden(_ isHidden: Bool) {
     UIView.animate(withDuration: 0.2) {
       self.textField.leftView?.alpha = isHidden ? 0 : 1
@@ -54,27 +48,39 @@ class BrowserAddressBar: UIView {
     progressView.alpha = 1
     animated ? animateProgress(progress) : setProgress(progress)
   }
+
+  func setDisplayedDomain(_ domain: String) {
+    text = domain
+    domainLabel.text = domain
+    textField.text = domain
+    textField.activityState = .inactive
+  }
 }
 
 // MARK: Helper methods
 private extension BrowserAddressBar {
   func setupView() {
     if #available(iOS 26.0, *) {
-      glassView.effect = UIGlassEffect()
+      let effect = UIGlassEffect(style: .regular)
+      effect.isInteractive = true
+      glassView.effect = effect
     } else {
       glassView.effect = UIBlurEffect(style: .systemChromeMaterial)
     }
     layer.masksToBounds = false
-    containerView.layer.masksToBounds = true
-    containerView.layer.cornerRadius = 25
+    containerView.layer.masksToBounds = false
+    containerView.layer.cornerRadius = 28
     containerView.layer.cornerCurve = .continuous
     containerView.layer.borderWidth = 0.5
     containerView.layer.borderColor = UIColor { traits in
-      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.18)
+      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.10)
     }.cgColor
+    containerView.layer.shadowColor = UIColor.black.cgColor
+    containerView.layer.shadowOpacity = 0.22
+    containerView.layer.shadowRadius = 12
+    containerView.layer.shadowOffset = CGSize(width: 0, height: 3)
     containerView.backgroundColor = .clear
     setupContainerView()
-    setupShadowView()
     setupTextField()
     setupProgressView()
     setupDomainLabel()
@@ -83,6 +89,9 @@ private extension BrowserAddressBar {
   
   func setupContainerView() {
     containerView.addSubview(glassView)
+    glassView.clipsToBounds = true
+    glassView.layer.cornerRadius = 28
+    glassView.layer.cornerCurve = .continuous
     glassView.snp.makeConstraints { $0.edges.equalToSuperview() }
     addSubview(containerView)
     containerView.snp.makeConstraints {
@@ -91,22 +100,13 @@ private extension BrowserAddressBar {
     }
   }
   
-  func setupShadowView() {
-    shadowView.layer.masksToBounds = false
-    shadowView.layer.shadowColor = UIColor.black.cgColor
-    shadowView.layer.shadowOffset = CGSize(width: 0, height: 0)
-    shadowView.layer.shadowOpacity = 0.16
-    shadowView.layer.shadowRadius = 16
-    containerView.addSubview(shadowView)
-  }
-  
   func setupTextField() {
     textField.delegate = self
     textField.onReload = { [weak self] in self?.delegate?.addressBarDidTapReload() }
     containerView.addSubview(textField)
     textField.snp.makeConstraints {
-      $0.height.equalTo(46)
-      $0.top.bottom.equalToSuperview().inset(8)
+      $0.height.equalTo(42)
+      $0.top.bottom.equalToSuperview().inset(7)
       textFieldLeadingConstraint = $0.leading.equalToSuperview().offset(textFieldSidePadding).constraint
       textFieldTrailingConstraint = $0.trailing.equalToSuperview().offset(-textFieldSidePadding).constraint
     }
@@ -143,8 +143,8 @@ private extension BrowserAddressBar {
       $0.width.height.equalTo(24)
     }
     
-    plusOverlayView.layer.cornerRadius = textField.layer.cornerRadius
-    plusOverlayView.backgroundColor = .white
+    plusOverlayView.layer.cornerRadius = 22
+    plusOverlayView.backgroundColor = UIColor.clear
     plusOverlayView.alpha = 0
     containerView.addSubview(plusOverlayView)
     plusOverlayView.snp.makeConstraints {
@@ -153,14 +153,14 @@ private extension BrowserAddressBar {
   }
 
   func showEditingState() {
-    shadowView.isHidden = true
+    containerView.layer.shadowOpacity = 0
     domainLabel.alpha = 0
     textFieldLeadingConstraint?.update(offset: 0)
     textFieldTrailingConstraint?.update(offset: 0)
   }
   
   func showInactiveState() {
-    shadowView.isHidden = false
+    containerView.layer.shadowOpacity = 0.22
     domainLabel.alpha = 1
     textFieldLeadingConstraint?.update(offset: textFieldSidePadding)
     textFieldTrailingConstraint?.update(offset: -textFieldSidePadding)

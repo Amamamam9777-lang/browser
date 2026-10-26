@@ -1,5 +1,5 @@
-// Compact custom glass toolbar. Uses a custom UIView rather than UIToolbar so UIKit's
-// full-width toolbar background/shadow cannot reappear behind the floating capsule.
+// Safari-style floating control row. On iOS 26 each control owns a real
+// UIGlassEffect so the address field and the two round controls remain distinct.
 import UIKit
 
 protocol BrowserToolbarDelegate: AnyObject {
@@ -13,9 +13,10 @@ protocol BrowserToolbarDelegate: AnyObject {
 final class BrowserToolbar: UIView {
   weak var browserDelegate: BrowserToolbarDelegate?
 
-  private let blurView = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
-  private let buttonStack = UIStackView()
-  private var iconButtons: [UIButton] = []
+  private let backGlass = UIVisualEffectView(effect: nil)
+  private let menuGlass = UIVisualEffectView(effect: nil)
+  private let backButton = UIButton(type: .system)
+  private let menuButton = UIButton(type: .system)
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -26,92 +27,85 @@ final class BrowserToolbar: UIView {
 
   override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
     super.traitCollectionDidChange(previousTraitCollection)
-    updateStyle()
+    updateGlassEffects()
   }
 
   private func setupView() {
-    if #available(iOS 26.0, *) {
-      blurView.effect = UIGlassEffect()
-    }
     backgroundColor = .clear
+    isOpaque = false
     clipsToBounds = false
-    layer.cornerRadius = 27
-    layer.cornerCurve = .continuous
 
-    blurView.clipsToBounds = true
-    blurView.layer.cornerRadius = 27
-    blurView.layer.cornerCurve = .continuous
-    addSubview(blurView)
-    blurView.translatesAutoresizingMaskIntoConstraints = false
+    configureGlass(backGlass)
+    configureGlass(menuGlass)
+    addSubview(backGlass)
+    addSubview(menuGlass)
+    backGlass.translatesAutoresizingMaskIntoConstraints = false
+    menuGlass.translatesAutoresizingMaskIntoConstraints = false
+
     NSLayoutConstraint.activate([
-      blurView.leadingAnchor.constraint(equalTo: leadingAnchor),
-      blurView.trailingAnchor.constraint(equalTo: trailingAnchor),
-      blurView.topAnchor.constraint(equalTo: topAnchor),
-      blurView.bottomAnchor.constraint(equalTo: bottomAnchor)
+      backGlass.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 1),
+      backGlass.centerYAnchor.constraint(equalTo: centerYAnchor),
+      backGlass.widthAnchor.constraint(equalToConstant: 56),
+      backGlass.heightAnchor.constraint(equalToConstant: 56),
+      menuGlass.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -1),
+      menuGlass.centerYAnchor.constraint(equalTo: centerYAnchor),
+      menuGlass.widthAnchor.constraint(equalToConstant: 56),
+      menuGlass.heightAnchor.constraint(equalToConstant: 56)
     ])
 
-    buttonStack.axis = .horizontal
-    buttonStack.alignment = .center
-    buttonStack.distribution = .equalSpacing
-    buttonStack.spacing = 0
-    blurView.contentView.addSubview(buttonStack)
-    buttonStack.translatesAutoresizingMaskIntoConstraints = false
+    configureButton(backButton, symbol: "chevron.left", label: "Back")
+    configureButton(menuButton, symbol: "ellipsis", label: "More")
+    backButton.addTarget(self, action: #selector(backTapped), for: .touchUpInside)
+    menuButton.addTarget(self, action: #selector(menuTapped), for: .touchUpInside)
+    backGlass.contentView.addSubview(backButton)
+    menuGlass.contentView.addSubview(menuButton)
+    backButton.translatesAutoresizingMaskIntoConstraints = false
+    menuButton.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.activate([
-      buttonStack.leadingAnchor.constraint(equalTo: blurView.contentView.leadingAnchor, constant: 12),
-      buttonStack.trailingAnchor.constraint(equalTo: blurView.contentView.trailingAnchor, constant: -12),
-      buttonStack.topAnchor.constraint(equalTo: blurView.contentView.topAnchor, constant: 2),
-      buttonStack.bottomAnchor.constraint(equalTo: blurView.contentView.bottomAnchor, constant: -2)
+      backButton.leadingAnchor.constraint(equalTo: backGlass.contentView.leadingAnchor),
+      backButton.trailingAnchor.constraint(equalTo: backGlass.contentView.trailingAnchor),
+      backButton.topAnchor.constraint(equalTo: backGlass.contentView.topAnchor),
+      backButton.bottomAnchor.constraint(equalTo: backGlass.contentView.bottomAnchor),
+      menuButton.leadingAnchor.constraint(equalTo: menuGlass.contentView.leadingAnchor),
+      menuButton.trailingAnchor.constraint(equalTo: menuGlass.contentView.trailingAnchor),
+      menuButton.topAnchor.constraint(equalTo: menuGlass.contentView.topAnchor),
+      menuButton.bottomAnchor.constraint(equalTo: menuGlass.contentView.bottomAnchor)
     ])
-
-    let configs: [(String, String, Selector)] = [
-      ("Back", "chevron.left", #selector(backTapped)),
-      ("Menu", "ellipsis", #selector(tabsTapped))
-    ]
-    for (title, symbol, action) in configs {
-      let button = UIButton(type: .system)
-      button.accessibilityLabel = title
-      button.setImage(UIImage(systemName: symbol), for: .normal)
-      button.addTarget(self, action: action, for: .touchUpInside)
-      button.tintColor = UIColor { traits in
-        traits.userInterfaceStyle == .dark ? .white : .label
-      }
-      button.imageView?.contentMode = .scaleAspectFit
-      button.setPreferredSymbolConfiguration(
-        UIImage.SymbolConfiguration(pointSize: 21, weight: .regular),
-        forImageIn: .normal
-      )
-      button.widthAnchor.constraint(equalToConstant: 48).isActive = true
-      buttonStack.addArrangedSubview(button)
-      iconButtons.append(button)
-    }
-    updateStyle()
+    updateGlassEffects()
   }
 
-  private func updateStyle() {
+  private func configureGlass(_ glass: UIVisualEffectView) {
+    glass.clipsToBounds = true
+    glass.layer.cornerRadius = 28
+    glass.layer.cornerCurve = .continuous
+    glass.isUserInteractionEnabled = true
+  }
+
+  private func configureButton(_ button: UIButton, symbol: String, label: String) {
+    button.accessibilityLabel = label
+    button.tintColor = .label
+    button.setImage(UIImage(systemName: symbol), for: .normal)
+    button.imageView?.contentMode = .scaleAspectFit
+    button.setPreferredSymbolConfiguration(
+      UIImage.SymbolConfiguration(pointSize: symbol == "ellipsis" ? 22 : 24, weight: .regular),
+      forImageIn: .normal
+    )
+  }
+
+  private func updateGlassEffects() {
     if #available(iOS 26.0, *) {
-      blurView.effect = UIGlassEffect()
+      let backEffect = UIGlassEffect(style: .regular)
+      backEffect.isInteractive = true
+      backGlass.effect = backEffect
+      let menuEffect = UIGlassEffect(style: .regular)
+      menuEffect.isInteractive = true
+      menuGlass.effect = menuEffect
     } else {
-      blurView.effect = UIBlurEffect(style: .systemChromeMaterial)
-    }
-    layer.borderWidth = 0.5
-    layer.borderColor = UIColor { traits in
-      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.18)
-    }.cgColor
-    layer.shadowColor = UIColor.black.cgColor
-    layer.shadowOpacity = traitCollection.userInterfaceStyle == .dark ? 0.32 : 0.18
-    layer.shadowRadius = 20
-    layer.shadowOffset = CGSize(width: 0, height: 7)
-    iconButtons.forEach {
-      $0.setPreferredSymbolConfiguration(
-        UIImage.SymbolConfiguration(pointSize: 19, weight: .regular),
-        forImageIn: .normal
-      )
+      backGlass.effect = UIBlurEffect(style: .systemChromeMaterial)
+      menuGlass.effect = UIBlurEffect(style: .systemChromeMaterial)
     }
   }
 
   @objc private func backTapped() { browserDelegate?.browserToolbarDidTapBack() }
-  @objc private func forwardTapped() { browserDelegate?.browserToolbarDidTapForward() }
-  @objc private func shareTapped() { browserDelegate?.browserToolbarDidTapShare() }
-  @objc private func bookmarksTapped() { browserDelegate?.browserToolbarDidTapBookmarks() }
-  @objc private func tabsTapped() { browserDelegate?.browserToolbarDidTapTabs() }
+  @objc private func menuTapped() { browserDelegate?.browserToolbarDidTapTabs() }
 }
