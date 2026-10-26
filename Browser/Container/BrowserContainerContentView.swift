@@ -60,7 +60,7 @@ class BrowserContainerContentView: UIView {
 // MARK: Helper methods
 private extension BrowserContainerContentView {
   func setupView() {
-    backgroundColor = UIColor.systemBackground
+    backgroundColor = UIColor { traits in traits.userInterfaceStyle == .dark ? UIColor(white: 0.04, alpha: 1) : UIColor(white: 0.965, alpha: 1) }
     setupTabsScrollView()
     setupTabsStackView()
     setupToolbar()
@@ -100,7 +100,7 @@ private extension BrowserContainerContentView {
       $0.top.equalTo(tabsScrollView.snp.bottom)
       $0.leading.trailing.equalToSuperview()
       toolbarBottomConstraint = $0.bottom.equalTo(safeAreaLayoutGuide.snp.bottom).constraint
-      $0.height.equalTo(100)
+      $0.height.equalTo(72)
     }
   }
   

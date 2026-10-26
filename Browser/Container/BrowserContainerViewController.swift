@@ -59,6 +59,7 @@ class BrowserContainerViewController: UIViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
     setupCancelButton()
+    contentView.toolbar.browserDelegate = self
     setupAddressBarsScrollView()
     setupAddressBarsExpandingOnTap()
     setupKeyboardManager()
@@ -179,5 +180,38 @@ extension BrowserContainerViewController: BrowserAddressBarDelegate {
       tabViewController.loadWebsite(from: url)
     }
     dismissKeyboard()
+  }
+}
+
+
+extension BrowserContainerViewController: BrowserToolbarDelegate {
+  func browserToolbarDidTapBack() {
+    if let tab = tabViewControllers[safe: currentTabIndex] { tab.goBackIfPossible() }
+  }
+  func browserToolbarDidTapForward() { tabViewControllers[safe: currentTabIndex]?.goForwardIfPossible() }
+  func browserToolbarDidTapShare() {
+    guard let url = tabViewControllers[safe: currentTabIndex]?.currentURL else { return }
+    let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+    if let popover = sheet.popoverPresentationController { popover.sourceView = contentView.toolbar; popover.sourceRect = contentView.toolbar.bounds }
+    present(sheet, animated: true)
+  }
+  func browserToolbarDidTapBookmarks() {
+    let alert = UIAlertController(title: "Bookmarks", message: "Bookmark management is not part of this project yet.", preferredStyle: .alert)
+    alert.addAction(UIAlertAction(title: "OK", style: .default))
+    present(alert, animated: true)
+  }
+  func browserToolbarDidTapTabs() {
+    let alert = UIAlertController(title: "Tabs (\(tabViewControllers.count))", message: "A full visual tab overview is not implemented in this version.", preferredStyle: .actionSheet)
+    for index in tabViewControllers.indices {
+      alert.addAction(UIAlertAction(title: "Tab \(index + 1)\(index == currentTabIndex ? " ✓" : "")", style: .default, handler: { [weak self] _ in
+        guard let self = self, index < self.contentView.addressBars.count else { return }
+        self.currentTabIndex = index
+        self.contentView.addressBarsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * self.contentView.addressBarPageWidth, y: 0), animated: true)
+      }))
+    }
+    alert.addAction(UIAlertAction(title: "New Tab", style: .default, handler: { [weak self] _ in self?.openNewTab(isHidden: false) }))
+    alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+    if let popover = alert.popoverPresentationController { popover.sourceView = contentView.toolbar; popover.sourceRect = contentView.toolbar.bounds }
+    present(alert, animated: true)
   }
 }
