@@ -234,10 +234,12 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
     guard isViewLoaded, view.window != nil, presentedViewController == nil else { return }
     let menu = BrowserSafariMenuViewController(isOnWebPage: false)
     menu.onAllTabs = { [weak self] in
-      // UIKit can briefly keep the dismissed overFullScreen controller in the
-      // presentation chain. Defer presentation to the next main-loop turn and
-      // let presentTabsOverview safely resolve that transition.
-      DispatchQueue.main.async { [weak self] in self?.presentTabsOverview() }
+      // This callback is invoked from the menu dismissal completion. Present on
+      // the next run-loop turn so UIKit can finish unlinking the overFullScreen
+      // controller before presenting another modal.
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+        self?.presentTabsOverview()
+      }
     }
     menu.onNewTab = { [weak self] in self?.createAndSelectNewTab() }
     menu.onBookmarks = { [weak self] in self?.browserToolbarDidTapBookmarks() }
@@ -304,7 +306,9 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
         addressBar.textField.becomeFirstResponder()
       },
       onMenu: { [weak self] in
-        DispatchQueue.main.async { [weak self] in self?.presentBrowserMenu() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+          self?.presentBrowserMenu()
+        }
       })
     overview.modalPresentationStyle = .overFullScreen
     overview.modalPresentationCapturesStatusBarAppearance = true
@@ -328,9 +332,6 @@ private final class BrowserTabsOverviewViewController: UIViewController {
   private let groupPrivateButton = UIButton(type: .system)
   private let groupStartButton = UIButton(type: .system)
   private var selectedGroupIsStartPage = true
-  private var pendingSnapshotJobs: [(tab: BrowserTabViewController, imageView: UIImageView, placeholder: UIImageView)] = []
-  private var isCapturingSnapshot = false
-  private var didStartSnapshotQueue = false
 
   init(
     tabs: [BrowserTabViewController],
@@ -368,38 +369,6 @@ private final class BrowserTabsOverviewViewController: UIViewController {
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     gradientLayer.frame = view.bounds
-  }
-
-  override func viewDidAppear(_ animated: Bool) {
-    super.viewDidAppear(animated)
-    guard !didStartSnapshotQueue else { return }
-    didStartSnapshotQueue = true
-    // Let the modal transition finish before asking WebKit for any thumbnails.
-    // Capture one tab at a time to avoid multiple WKWebView snapshot requests
-    // racing during the tab-grid presentation.
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-      self?.captureNextTabSnapshot()
-    }
-  }
-
-  private func captureNextTabSnapshot() {
-    guard isViewLoaded, view.window != nil, !isCapturingSnapshot,
-          !pendingSnapshotJobs.isEmpty else { return }
-    let job = pendingSnapshotJobs.removeFirst()
-    isCapturingSnapshot = true
-    let imageView = job.imageView
-    let placeholder = job.placeholder
-    job.tab.captureTabSnapshot { [weak self, weak imageView, weak placeholder] image in
-      guard let self else { return }
-      if let image, let imageView {
-        imageView.image = image
-        placeholder?.isHidden = true
-      }
-      self.isCapturingSnapshot = false
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-        self?.captureNextTabSnapshot()
-      }
-    }
   }
 
   private func buildBackground() {
@@ -522,41 +491,90 @@ private final class BrowserTabsOverviewViewController: UIViewController {
     preview.translatesAutoresizingMaskIntoConstraints = false
     item.addSubview(preview)
 
-    let snapshotImageView = UIImageView()
-    snapshotImageView.contentMode = .scaleToFill
-    snapshotImageView.clipsToBounds = true
-    snapshotImageView.backgroundColor = UIColor(white: 0.07, alpha: 1)
-    snapshotImageView.translatesAutoresizingMaskIntoConstraints = false
-    preview.addSubview(snapshotImageView)
-
-    // Preserve the screenshot's own portrait proportions and crop only the lower
-    // portion, like Safari's tab thumbnail rather than stretching the whole page.
+    // Keep the tab overview independent from WKWebView screenshot APIs.
+    // Some iOS/WebKit combinations crash when takeSnapshot is invoked while a
+    // modal tab overview is being presented. Use a lightweight native preview
+    // instead; selecting a card still returns to the original live WKWebView.
+    let previewContent = UIView()
+    previewContent.translatesAutoresizingMaskIntoConstraints = false
+    previewContent.backgroundColor = UIColor(white: 0.055, alpha: 1)
+    preview.addSubview(previewContent)
     NSLayoutConstraint.activate([
-      preview.topAnchor.constraint(equalTo: item.topAnchor),
-      preview.leadingAnchor.constraint(equalTo: item.leadingAnchor),
-      preview.trailingAnchor.constraint(equalTo: item.trailingAnchor),
-      preview.heightAnchor.constraint(equalTo: preview.widthAnchor, multiplier: 1.40),
-      snapshotImageView.topAnchor.constraint(equalTo: preview.topAnchor),
-      snapshotImageView.leadingAnchor.constraint(equalTo: preview.leadingAnchor),
-      snapshotImageView.trailingAnchor.constraint(equalTo: preview.trailingAnchor),
-      snapshotImageView.heightAnchor.constraint(equalTo: preview.widthAnchor, multiplier: 2.15)
+      previewContent.topAnchor.constraint(equalTo: preview.topAnchor),
+      previewContent.leadingAnchor.constraint(equalTo: preview.leadingAnchor),
+      previewContent.trailingAnchor.constraint(equalTo: preview.trailingAnchor),
+      previewContent.bottomAnchor.constraint(equalTo: preview.bottomAnchor)
     ])
 
-    let placeholder = UIImageView(image: UIImage(systemName: tab.hasLoadedUrl ? "globe" : "safari.fill"))
-    placeholder.tintColor = UIColor(white: 0.7, alpha: 1)
-    placeholder.contentMode = .scaleAspectFit
-    placeholder.translatesAutoresizingMaskIntoConstraints = false
-    preview.addSubview(placeholder)
+    let previewHeader = UIView()
+    previewHeader.backgroundColor = UIColor.white.withAlphaComponent(0.045)
+    previewHeader.translatesAutoresizingMaskIntoConstraints = false
+    previewContent.addSubview(previewHeader)
+
+    let dotStack = UIStackView()
+    dotStack.axis = .horizontal
+    dotStack.spacing = 4
+    dotStack.translatesAutoresizingMaskIntoConstraints = false
+    for color in [UIColor.systemRed, UIColor.systemYellow, UIColor.systemGreen] {
+      let dot = UIView()
+      dot.backgroundColor = color.withAlphaComponent(0.72)
+      dot.layer.cornerRadius = 2.5
+      dot.translatesAutoresizingMaskIntoConstraints = false
+      NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 5), dot.heightAnchor.constraint(equalToConstant: 5)])
+      dotStack.addArrangedSubview(dot)
+    }
+    previewHeader.addSubview(dotStack)
+
+    let pageTitle = UILabel()
+    let pageHost = tab.hasLoadedUrl ? (tab.currentURL?.host ?? "Webpage") : "Start Page"
+    pageTitle.text = pageHost
+    pageTitle.font = .systemFont(ofSize: 10, weight: .semibold)
+    pageTitle.textColor = UIColor(white: 0.88, alpha: 1)
+    pageTitle.lineBreakMode = .byTruncatingTail
+    pageTitle.textAlignment = .center
+    pageTitle.translatesAutoresizingMaskIntoConstraints = false
+    previewContent.addSubview(pageTitle)
+
+    let pageSymbol = UIImageView(image: UIImage(systemName: tab.hasLoadedUrl ? "globe" : "safari.fill"))
+    pageSymbol.tintColor = UIColor(white: 0.82, alpha: 1)
+    pageSymbol.contentMode = .scaleAspectFit
+    pageSymbol.translatesAutoresizingMaskIntoConstraints = false
+    previewContent.addSubview(pageSymbol)
+
+    let previewLines = UIStackView()
+    previewLines.axis = .vertical
+    previewLines.spacing = 7
+    previewLines.translatesAutoresizingMaskIntoConstraints = false
+    previewContent.addSubview(previewLines)
+    for i in 0..<6 {
+      let line = UIView()
+      line.backgroundColor = UIColor.white.withAlphaComponent(i == 0 ? 0.16 : 0.075)
+      line.layer.cornerRadius = 2
+      line.translatesAutoresizingMaskIntoConstraints = false
+      line.heightAnchor.constraint(equalToConstant: i == 0 ? 7 : 4).isActive = true
+      previewLines.addArrangedSubview(line)
+      line.widthAnchor.constraint(equalTo: previewLines.widthAnchor, multiplier: i == 2 || i == 5 ? 0.62 : 0.9).isActive = true
+    }
+
     NSLayoutConstraint.activate([
-      placeholder.centerXAnchor.constraint(equalTo: preview.centerXAnchor),
-      placeholder.centerYAnchor.constraint(equalTo: preview.centerYAnchor),
-      placeholder.widthAnchor.constraint(equalToConstant: 38),
-      placeholder.heightAnchor.constraint(equalToConstant: 38)
+      previewHeader.topAnchor.constraint(equalTo: previewContent.topAnchor),
+      previewHeader.leadingAnchor.constraint(equalTo: previewContent.leadingAnchor),
+      previewHeader.trailingAnchor.constraint(equalTo: previewContent.trailingAnchor),
+      previewHeader.heightAnchor.constraint(equalToConstant: 22),
+      dotStack.leadingAnchor.constraint(equalTo: previewHeader.leadingAnchor, constant: 10),
+      dotStack.centerYAnchor.constraint(equalTo: previewHeader.centerYAnchor),
+      pageTitle.centerXAnchor.constraint(equalTo: previewContent.centerXAnchor),
+      pageTitle.topAnchor.constraint(equalTo: previewHeader.bottomAnchor, constant: 12),
+      pageTitle.leadingAnchor.constraint(greaterThanOrEqualTo: previewContent.leadingAnchor, constant: 7),
+      pageTitle.trailingAnchor.constraint(lessThanOrEqualTo: previewContent.trailingAnchor, constant: -7),
+      pageSymbol.centerXAnchor.constraint(equalTo: previewContent.centerXAnchor),
+      pageSymbol.topAnchor.constraint(equalTo: pageTitle.bottomAnchor, constant: 15),
+      pageSymbol.widthAnchor.constraint(equalToConstant: 24),
+      pageSymbol.heightAnchor.constraint(equalToConstant: 24),
+      previewLines.topAnchor.constraint(equalTo: pageSymbol.bottomAnchor, constant: 16),
+      previewLines.leadingAnchor.constraint(equalTo: previewContent.leadingAnchor, constant: 12),
+      previewLines.trailingAnchor.constraint(equalTo: previewContent.trailingAnchor, constant: -12)
     ])
-    // Queue the capture instead of snapshotting every WKWebView at once.
-    // Simultaneous WebKit snapshots during modal presentation caused crashes
-    // on some device/iOS combinations.
-    pendingSnapshotJobs.append((tab: tab, imageView: snapshotImageView, placeholder: placeholder))
 
     let star = UIImageView(image: UIImage(systemName: "star.fill"))
     star.tintColor = UIColor(white: 0.68, alpha: 1)
