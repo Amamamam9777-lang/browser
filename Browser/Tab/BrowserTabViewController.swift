@@ -21,6 +21,9 @@ class BrowserTabViewController: UIViewController {
   private var startYOffset = CGFloat(0)
   private var loadingProgressObservation: NSKeyValueObservation?
   var hasLoadedUrl = false
+  var currentURL: URL? { contentView.webView.url }
+  func goBackIfPossible() { if contentView.webView.canGoBack { contentView.webView.goBack() } }
+  func goForwardIfPossible() { if contentView.webView.canGoForward { contentView.webView.goForward() } }
   weak var delegate: BrowserTabViewControllerDelegate?
   
   override var preferredStatusBarStyle: UIStatusBarStyle {
