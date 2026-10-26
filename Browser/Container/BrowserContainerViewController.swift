@@ -206,7 +206,7 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
     present(alert, animated: true)
   }
   func browserToolbarDidTapTabs() {
-    let alert = UIAlertController(title: "Tabs (\(tabViewControllers.count))", message: "A full visual tab overview is not implemented in this version.", preferredStyle: .actionSheet)
+    let alert = UIAlertController(title: "Tabs (\(tabViewControllers.count))", message: "Select an open tab, or create a new tab.", preferredStyle: .actionSheet)
     for index in tabViewControllers.indices {
       alert.addAction(UIAlertAction(title: "Tab \(index + 1)\(index == currentTabIndex ? " ✓" : "")", style: .default, handler: { [weak self] _ in
         guard let self = self, index < self.contentView.addressBars.count else { return }
