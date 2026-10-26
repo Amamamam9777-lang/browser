@@ -13,6 +13,8 @@ class BrowserTabContentView: UIView {
   let webView: WKWebView = {
     let webView = WKWebView()
     webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Mobile/15E148 Safari/604.1"
+    webView.backgroundColor = .black
+    webView.isOpaque = false
     return webView
   }()
   let emptyStateView = BrowserTabEmptyStateView()
@@ -38,7 +40,7 @@ class BrowserTabContentView: UIView {
 // MARK: Helper methods
 private extension BrowserTabContentView {
   func setupView() {
-    backgroundColor = .white
+    backgroundColor = .black
     layer.masksToBounds = false
     setupShadow()
     setupWebView()
@@ -67,7 +69,7 @@ private extension BrowserTabContentView {
   }
   
   func setupStatusBarBackgroundView() {
-    statusBarBackgroundView.backgroundColor = .white
+    statusBarBackgroundView.backgroundColor = .black
     addSubview(statusBarBackgroundView)
     statusBarBackgroundView.snp.makeConstraints {
       $0.top.leading.trailing.equalToSuperview()

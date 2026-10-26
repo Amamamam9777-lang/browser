@@ -38,7 +38,27 @@ class BrowserTabViewController: UIViewController {
   
   override func viewDidLoad() {
     super.viewDidLoad()
+    view.overrideUserInterfaceStyle = .dark
+    contentView.emptyStateView.onOpenURL = { [weak self] url in
+      self?.loadWebsite(from: url)
+    }
     setupWebView()
+  }
+
+  /// Captures the displayed page for the tab overview without stretching a live
+  /// WKWebView snapshot into the thumbnail's aspect ratio.
+  func captureTabSnapshot(completion: @escaping (UIImage?) -> Void) {
+    view.layoutIfNeeded()
+    let size = view.bounds.size
+    guard size.width > 1, size.height > 1 else {
+      completion(nil)
+      return
+    }
+    let renderer = UIGraphicsImageRenderer(size: size)
+    let image = renderer.image { _ in
+      view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: false)
+    }
+    completion(image)
   }
   
   override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey : Any]?, context: UnsafeMutableRawPointer?) {
