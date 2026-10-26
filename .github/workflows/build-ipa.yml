@@ -1,27 +1,39 @@
+
 name: Build Browser IPA
 
 on:
-workflow_dispatch:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
 
 jobs:
-build:
-runs-on: macos-latest
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
+      - name: Build IPA
+        run: |
+          xcodebuild \
+            -project Browser.xcodeproj \
+            -scheme Browser \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
 
-  - name: Select Xcode
-    run: |
-      xcodebuild -version
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Browser.app Payload/
+          zip -r Browser-unsigned.ipa Payload
 
-  - name: Build iOS app
-    run: |
-      xcodebuild \
-        -project Browser.xcodeproj \
-        -scheme Browser \
-        -sdk iphoneos \
-        -configuration Release \
-        -derivedDataPath build \
-        CODE_SIGNING_ALLOWED=NO \
-        build
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Browser-unsigned-IPA
+          path: Browser-unsigned.ipa
