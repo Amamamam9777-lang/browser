@@ -50,9 +50,11 @@ class BrowserAddressBar: UIView {
   }
 
   func setDisplayedDomain(_ domain: String) {
-    text = domain
-    domainLabel.text = domain
-    textField.text = domain
+    let value = domain.trimmingCharacters(in: .whitespacesAndNewlines)
+    text = value.isEmpty ? nil : value
+    domainLabel.text = value
+    domainLabel.isHidden = value.isEmpty
+    textField.text = value
     textField.activityState = .inactive
   }
 }
@@ -134,6 +136,7 @@ private extension BrowserAddressBar {
     domainLabel.adjustsFontSizeToFitWidth = true
     domainLabel.minimumScaleFactor = 0.78
     domainLabel.isUserInteractionEnabled = false
+    domainLabel.isHidden = true
     addSubview(domainLabel)
     // Keep the visible domain between the aA control and the trailing edge.
     // The previous centered label spanned the aA button and made both texts overlap.
