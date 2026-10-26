@@ -263,39 +263,26 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
     contentView.tabsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * (contentView.frame.width + contentView.tabsStackViewSpacing), y: 0), animated: false)
   }
 
-  private func presentTabsOverview() {
+  private func presentTabsOverview(retryCount: Int = 0) {
     guard isViewLoaded, view.window != nil else { return }
 
-    // If UIKit still reports the menu as presented during its dismissal,
-    // wait for that transition to finish instead of attempting two modal
-    // presentations at once (which can terminate the app on-device).
+    // Never try to dismiss or replace a controller while UIKit is in the middle
+    // of a modal transition. Wait for the menu's own dismissal completion to
+    // clear the presentation chain, then present the overview once.
     if let presented = presentedViewController {
       if presented is BrowserTabsOverviewViewController { return }
-      if presented is BrowserSafariMenuViewController {
-        presented.dismiss(animated: false) { [weak self] in
-          DispatchQueue.main.async { [weak self] in self?.presentTabsOverview() }
-        }
-        return
-      }
-      if presented.isBeingDismissed {
-        if let coordinator = presented.transitionCoordinator {
-          coordinator.animate(alongsideTransition: nil) { [weak self] _ in
-            DispatchQueue.main.async { [weak self] in self?.presentTabsOverview() }
-          }
-        } else {
-          DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            self?.presentTabsOverview()
-          }
-        }
+      guard retryCount < 12 else { return }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) { [weak self] in
+        self?.presentTabsOverview(retryCount: retryCount + 1)
       }
       return
     }
 
     guard !tabViewControllers.isEmpty else {
       openNewTab(isHidden: false)
-      currentTabIndex = 0
+      currentTabIndex = max(0, tabViewControllers.count - 1)
       scrollAddressBarToCurrentTab()
-      presentTabsOverview()
+      DispatchQueue.main.async { [weak self] in self?.presentTabsOverview(retryCount: retryCount) }
       return
     }
 
@@ -341,6 +328,9 @@ private final class BrowserTabsOverviewViewController: UIViewController {
   private let groupPrivateButton = UIButton(type: .system)
   private let groupStartButton = UIButton(type: .system)
   private var selectedGroupIsStartPage = true
+  private var pendingSnapshotJobs: [(tab: BrowserTabViewController, imageView: UIImageView, placeholder: UIImageView)] = []
+  private var isCapturingSnapshot = false
+  private var didStartSnapshotQueue = false
 
   init(
     tabs: [BrowserTabViewController],
@@ -378,6 +368,38 @@ private final class BrowserTabsOverviewViewController: UIViewController {
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     gradientLayer.frame = view.bounds
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    guard !didStartSnapshotQueue else { return }
+    didStartSnapshotQueue = true
+    // Let the modal transition finish before asking WebKit for any thumbnails.
+    // Capture one tab at a time to avoid multiple WKWebView snapshot requests
+    // racing during the tab-grid presentation.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+      self?.captureNextTabSnapshot()
+    }
+  }
+
+  private func captureNextTabSnapshot() {
+    guard isViewLoaded, view.window != nil, !isCapturingSnapshot,
+          !pendingSnapshotJobs.isEmpty else { return }
+    let job = pendingSnapshotJobs.removeFirst()
+    isCapturingSnapshot = true
+    let imageView = job.imageView
+    let placeholder = job.placeholder
+    job.tab.captureTabSnapshot { [weak self, weak imageView, weak placeholder] image in
+      guard let self else { return }
+      if let image, let imageView {
+        imageView.image = image
+        placeholder?.isHidden = true
+      }
+      self.isCapturingSnapshot = false
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+        self?.captureNextTabSnapshot()
+      }
+    }
   }
 
   private func buildBackground() {
@@ -531,14 +553,10 @@ private final class BrowserTabsOverviewViewController: UIViewController {
       placeholder.widthAnchor.constraint(equalToConstant: 38),
       placeholder.heightAnchor.constraint(equalToConstant: 38)
     ])
-    tab.captureTabSnapshot { image in
-      DispatchQueue.main.async {
-        if let image {
-          snapshotImageView.image = image
-          placeholder.isHidden = true
-        }
-      }
-    }
+    // Queue the capture instead of snapshotting every WKWebView at once.
+    // Simultaneous WebKit snapshots during modal presentation caused crashes
+    // on some device/iOS combinations.
+    pendingSnapshotJobs.append((tab: tab, imageView: snapshotImageView, placeholder: placeholder))
 
     let star = UIImageView(image: UIImage(systemName: "star.fill"))
     star.tintColor = UIColor(white: 0.68, alpha: 1)
@@ -768,7 +786,8 @@ private final class BrowserSafariMenuViewController: UIViewController {
     // Scale the entire glass card by 35%, including its rows and typography,
     // while offsetting the layout anchor so it still sits on the bottom edge.
     if !isOnWebPage {
-      let scale: CGFloat = 0.65
+      // Increase the previously reduced menu by 10% (0.65 × 1.10).
+      let scale: CGFloat = 0.715
       panelBottomConstraint?.constant = -4 + (panelHeight * (1 - scale) / 2)
       panel.transform = CGAffineTransform(scaleX: scale, y: scale)
     }
