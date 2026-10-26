@@ -19,6 +19,17 @@ class BrowserToolbar: UIToolbar {
     // https://stackoverflow.com/questions/59700020/layout-constraint-errors-with-simple-uitoolar-for-keyboard-inputaccessoryview
     super.init(frame: CGRect(origin: .zero, size: CGSize(width: 100, height: 100)))
     setupButtons()
+    // Safari-inspired translucent bottom toolbar.
+    if #available(iOS 15.0, *) {
+      let appearance = UIToolbarAppearance()
+      appearance.configureWithDefaultBackground()
+      appearance.backgroundEffect = UIBlurEffect(style: .systemMaterial)
+      appearance.backgroundColor = UIColor.secondarySystemBackground.withAlphaComponent(0.72)
+      standardAppearance = appearance
+      scrollEdgeAppearance = appearance
+      compactAppearance = appearance
+    }
+    tintColor = .systemBlue
   }
   
   required init?(coder: NSCoder) {

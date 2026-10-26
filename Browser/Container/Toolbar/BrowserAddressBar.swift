@@ -59,6 +59,7 @@ private extension BrowserAddressBar {
   func setupView() {
     layer.masksToBounds = false
     containerView.layer.masksToBounds = false
+    containerView.layer.cornerRadius = 24
     setupContainerView()
     setupShadowView()
     setupTextField()
@@ -77,10 +78,10 @@ private extension BrowserAddressBar {
   
   func setupShadowView() {
     shadowView.layer.masksToBounds = false
-    shadowView.layer.shadowColor = UIColor.lightGray.cgColor
-    shadowView.layer.shadowOffset = CGSize(width: 0, height: 0)
-    shadowView.layer.shadowOpacity = 0.15
-    shadowView.layer.shadowRadius = 4
+    shadowView.layer.shadowColor = UIColor.black.cgColor
+    shadowView.layer.shadowOffset = CGSize(width: 0, height: 3)
+    shadowView.layer.shadowOpacity = 0.10
+    shadowView.layer.shadowRadius = 12
     containerView.addSubview(shadowView)
   }
   

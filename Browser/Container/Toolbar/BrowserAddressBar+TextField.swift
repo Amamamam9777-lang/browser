@@ -80,8 +80,8 @@ extension BrowserAddressBar {
 // MARK: Helper methods
 private extension BrowserAddressBar.TextField {
   func setupView() {
-    layer.cornerRadius = 12
-    backgroundColor = .white
+    layer.cornerRadius = 20
+    backgroundColor = UIColor.secondarySystemBackground.withAlphaComponent(0.94)
     clearButtonMode = .whileEditing
     returnKeyType = .go
     leftViewMode = .always
