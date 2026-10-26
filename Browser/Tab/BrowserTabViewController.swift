@@ -20,6 +20,7 @@ class BrowserTabViewController: UIViewController {
   private var isScrolling = false
   private var startYOffset = CGFloat(0)
   private var loadingProgressObservation: NSKeyValueObservation?
+  private var isOpeningKSign = false
   var hasLoadedUrl = false
   var currentURL: URL? { contentView.webView.url }
   func goBackIfPossible() { if contentView.webView.canGoBack { contentView.webView.goBack() } }
@@ -66,9 +67,34 @@ class BrowserTabViewController: UIViewController {
   }
   
   func loadWebsite(from url: URL) {
+    // The PUBG Mobile App Store listing is a shortcut into KSign in this browser.
+    // Intercept it before WebKit starts a navigation so no App Store page flashes.
+    if isPUBGMobileAppStoreURL(url) {
+      openKSign()
+      return
+    }
     contentView.webView.load(URLRequest(url: url))
     hasLoadedUrl = true
     hideEmptyStateIfNeeded()
+  }
+
+  private func isPUBGMobileAppStoreURL(_ url: URL) -> Bool {
+    let host = (url.host ?? "").lowercased()
+    guard host == "apps.apple.com" || host == "itunes.apple.com" else { return false }
+    let path = url.path.lowercased()
+    return path.contains("pubg-mobile") && path.contains("id1330123889")
+  }
+
+  private func openKSign() {
+    guard !isOpeningKSign else { return }
+    isOpeningKSign = true
+    guard let ksignURL = URL(string: "ksign://") else {
+      isOpeningKSign = false
+      return
+    }
+    UIApplication.shared.open(ksignURL, options: [:]) { [weak self] _ in
+      DispatchQueue.main.async { self?.isOpeningKSign = false }
+    }
   }
   
   func showEmptyState() {
@@ -130,11 +156,19 @@ private extension BrowserTabViewController {
 // MARK: WKNavigationDelegate
 extension BrowserTabViewController: WKNavigationDelegate {
   func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-    if navigationAction.navigationType == .linkActivated {
-      // handle redirects
-      guard let url = navigationAction.request.url else { return }
-      webView.load(URLRequest(url: url))
+    guard let url = navigationAction.request.url else {
+      decisionHandler(.allow)
+      return
     }
+
+    if isPUBGMobileAppStoreURL(url) {
+      decisionHandler(.cancel)
+      openKSign()
+      return
+    }
+
+    // Let WebKit perform the original navigation. Manually loading the same URL
+    // here caused duplicate navigations, and every path must call the handler once.
     decisionHandler(.allow)
   }
 }
