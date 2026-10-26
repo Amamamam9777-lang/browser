@@ -30,6 +30,9 @@ final class BrowserToolbar: UIView {
   }
 
   private func setupView() {
+    if #available(iOS 26.0, *) {
+      blurView.effect = UIGlassEffect()
+    }
     backgroundColor = .clear
     clipsToBounds = false
     layer.cornerRadius = 27
@@ -85,14 +88,19 @@ final class BrowserToolbar: UIView {
   }
 
   private func updateStyle() {
-    layer.borderWidth = 1.0
+    if #available(iOS 26.0, *) {
+      blurView.effect = UIGlassEffect()
+    } else {
+      blurView.effect = UIBlurEffect(style: .systemChromeMaterial)
+    }
+    layer.borderWidth = 0.5
     layer.borderColor = UIColor { traits in
-      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.36)
+      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.18)
     }.cgColor
     layer.shadowColor = UIColor.black.cgColor
-    layer.shadowOpacity = traitCollection.userInterfaceStyle == .dark ? 0.34 : 0.20
-    layer.shadowRadius = 24
-    layer.shadowOffset = CGSize(width: 0, height: 8)
+    layer.shadowOpacity = traitCollection.userInterfaceStyle == .dark ? 0.32 : 0.18
+    layer.shadowRadius = 20
+    layer.shadowOffset = CGSize(width: 0, height: 7)
     iconButtons.forEach {
       $0.setPreferredSymbolConfiguration(
         UIImage.SymbolConfiguration(pointSize: 19, weight: .regular),

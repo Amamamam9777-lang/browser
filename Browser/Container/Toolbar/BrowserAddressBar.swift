@@ -59,13 +59,18 @@ class BrowserAddressBar: UIView {
 // MARK: Helper methods
 private extension BrowserAddressBar {
   func setupView() {
+    if #available(iOS 26.0, *) {
+      glassView.effect = UIGlassEffect()
+    } else {
+      glassView.effect = UIBlurEffect(style: .systemChromeMaterial)
+    }
     layer.masksToBounds = false
     containerView.layer.masksToBounds = true
     containerView.layer.cornerRadius = 25
     containerView.layer.cornerCurve = .continuous
     containerView.layer.borderWidth = 0.5
     containerView.layer.borderColor = UIColor { traits in
-      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.36)
+      (traits.userInterfaceStyle == .dark ? UIColor.white : UIColor.black).withAlphaComponent(0.18)
     }.cgColor
     containerView.backgroundColor = .clear
     setupContainerView()
@@ -90,8 +95,8 @@ private extension BrowserAddressBar {
     shadowView.layer.masksToBounds = false
     shadowView.layer.shadowColor = UIColor.black.cgColor
     shadowView.layer.shadowOffset = CGSize(width: 0, height: 0)
-    shadowView.layer.shadowOpacity = 0.20
-    shadowView.layer.shadowRadius = 20
+    shadowView.layer.shadowOpacity = 0.16
+    shadowView.layer.shadowRadius = 16
     containerView.addSubview(shadowView)
   }
   
