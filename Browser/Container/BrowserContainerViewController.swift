@@ -507,7 +507,12 @@ private final class BrowserTabsOverviewViewController: UIViewController {
     ])
 
     for index in tabs.indices {
-      stack.addArrangedSubview(makeCard(for: index))
+      let card = makeCard(for: index)
+      stack.addArrangedSubview(card)
+      // Activate this constraint only after the card joins the hierarchy.
+      // Activating it inside makeCard() crashes with NSLayoutAnchor's
+      // _nearestAncestorLayoutItem because the card is not in the scroll view yet.
+      card.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, multiplier: 0.67).isActive = true
     }
   }
 
@@ -515,7 +520,6 @@ private final class BrowserTabsOverviewViewController: UIViewController {
     let tab = tabs[index]
     let item = UIView()
     item.translatesAutoresizingMaskIntoConstraints = false
-    item.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, multiplier: 0.67).isActive = true
 
     let preview = UIView()
     preview.backgroundColor = UIColor(white: 0.075, alpha: 1)
