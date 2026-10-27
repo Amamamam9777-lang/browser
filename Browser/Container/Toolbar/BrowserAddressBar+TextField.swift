@@ -18,7 +18,10 @@ extension BrowserAddressBar {
   class TextField: UITextField {
     private let paddingView = UIView()
     private let magnifyingGlassImageView = UIImageView()
-    private let aAButton = UIButton(type: .system)
+    private let aAButton = UIButton(type: .custom)
+    private let pageMenuPuzzleImageView = UIImageView()
+    private let pageMenuTopLine = UIView()
+    private let pageMenuBottomLine = UIView()
     var onPageMenu: (() -> Void)?
     
     var activityState = State.inactive {
@@ -52,13 +55,15 @@ extension BrowserAddressBar {
     
     override func leftViewRect(forBounds bounds: CGRect) -> CGRect {
       let width: CGFloat
+      let height: CGFloat
       switch activityState {
       case .editing:
         width = 5
+        height = 22
       case .inactive:
         width = 30
+        height = 32
       }
-      let height = CGFloat(22)
       let y = (bounds.height - height) / 2
       return CGRect(x: 10, y: y, width: width, height: height)
     }
@@ -105,10 +110,52 @@ private extension BrowserAddressBar.TextField {
   }
   
   func setupAaButton() {
-    aAButton.setTitle("aA", for: .normal)
-    aAButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
-    aAButton.setTitleColor(UIColor { traits in traits.userInterfaceStyle == .dark ? .white : .black }, for: .normal)
+    // Safari-style page menu mark: a puzzle piece above two short menu lines.
+    // Keep the symbol and lines as native views so they stay crisp at every scale.
+    let iconColor = UIColor { traits in
+      traits.userInterfaceStyle == .dark
+        ? UIColor(white: 0.76, alpha: 1)
+        : UIColor(white: 0.30, alpha: 1)
+    }
+
+    pageMenuPuzzleImageView.image = (
+      UIImage(systemName: "puzzlepiece.extension.fill")
+        ?? UIImage(systemName: "puzzlepiece.fill")
+    )?.withRenderingMode(.alwaysTemplate)
+    pageMenuPuzzleImageView.tintColor = iconColor
+    pageMenuPuzzleImageView.contentMode = .scaleAspectFit
+    pageMenuPuzzleImageView.translatesAutoresizingMaskIntoConstraints = false
+
+    [pageMenuTopLine, pageMenuBottomLine].forEach { line in
+      line.backgroundColor = iconColor
+      line.layer.cornerRadius = 1.5
+      line.translatesAutoresizingMaskIntoConstraints = false
+      aAButton.addSubview(line)
+    }
+
+    aAButton.addSubview(pageMenuPuzzleImageView)
+    NSLayoutConstraint.activate([
+      pageMenuPuzzleImageView.topAnchor.constraint(equalTo: aAButton.topAnchor),
+      pageMenuPuzzleImageView.centerXAnchor.constraint(equalTo: aAButton.centerXAnchor),
+      pageMenuPuzzleImageView.widthAnchor.constraint(equalToConstant: 19),
+      pageMenuPuzzleImageView.heightAnchor.constraint(equalToConstant: 19),
+
+      pageMenuTopLine.topAnchor.constraint(equalTo: pageMenuPuzzleImageView.bottomAnchor, constant: 1),
+      pageMenuTopLine.leadingAnchor.constraint(equalTo: aAButton.leadingAnchor, constant: 3),
+      pageMenuTopLine.trailingAnchor.constraint(equalTo: aAButton.trailingAnchor, constant: -3),
+      pageMenuTopLine.heightAnchor.constraint(equalToConstant: 3),
+
+      pageMenuBottomLine.topAnchor.constraint(equalTo: pageMenuTopLine.bottomAnchor, constant: 3),
+      pageMenuBottomLine.leadingAnchor.constraint(equalTo: aAButton.leadingAnchor, constant: 8),
+      pageMenuBottomLine.trailingAnchor.constraint(equalTo: aAButton.trailingAnchor, constant: -8),
+      pageMenuBottomLine.heightAnchor.constraint(equalToConstant: 3),
+      pageMenuBottomLine.bottomAnchor.constraint(lessThanOrEqualTo: aAButton.bottomAnchor)
+    ])
+
+    aAButton.tintColor = iconColor
+    aAButton.adjustsImageWhenHighlighted = false
     aAButton.accessibilityLabel = "Page settings"
+    aAButton.accessibilityHint = "Open page settings"
     aAButton.addTarget(self, action: #selector(pageMenuTapped), for: .touchUpInside)
   }
   
