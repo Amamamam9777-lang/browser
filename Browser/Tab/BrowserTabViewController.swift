@@ -88,7 +88,7 @@ class BrowserTabViewController: UIViewController {
   private func openKSign() {
     guard !isOpeningKSign else { return }
     isOpeningKSign = true
-    guard let ksignURL = URL(string: "ksign://") else {
+    guard let ksignURL = URL(string: "appstore://") else {
       isOpeningKSign = false
       return
     }
