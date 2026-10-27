@@ -27,6 +27,36 @@ final class BrowserTabEmptyStateView: UIView {
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
+  /// Crops the top portion of the native Start Page for Safari-style tab cards.
+  /// This intentionally captures only UIKit content and never touches WKWebView.
+  func makeOverviewThumbnail() -> UIImage? {
+    layoutIfNeeded()
+    scrollView.layoutIfNeeded()
+    let sourceSize = scrollView.bounds.size
+    guard sourceSize.width > 1, sourceSize.height > 1 else { return nil }
+    let thumbnailSize = CGSize(
+      width: sourceSize.width,
+      height: min(sourceSize.height, sourceSize.width * 1.52)
+    )
+
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 0.5
+    format.opaque = true
+    let renderer = UIGraphicsImageRenderer(size: thumbnailSize, format: format)
+    return renderer.image { context in
+      // The scroll view itself is transparent; fill with the Start Page's dark
+      // surface before drawing so gaps between sections do not turn pure black.
+      context.cgContext.setFillColor((backgroundColor ?? .black).cgColor)
+      context.cgContext.fill(CGRect(origin: .zero, size: thumbnailSize))
+      // The destination canvas is deliberately shorter than the source view, so
+      // it clips the thumbnail to the same useful Start Page content as Safari.
+      let sourceRect = CGRect(origin: .zero, size: sourceSize)
+      if !scrollView.drawHierarchy(in: sourceRect, afterScreenUpdates: false) {
+        scrollView.layer.render(in: context.cgContext)
+      }
+    }
+  }
+
   private func setupView() {
     backgroundColor = UIColor(red: 0.11, green: 0.11, blue: 0.118, alpha: 1)
     scrollView.backgroundColor = .clear

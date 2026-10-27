@@ -97,6 +97,14 @@ class BrowserTabViewController: UIViewController {
     }
   }
   
+  /// Creates a low-resolution thumbnail of a native Start Page only.
+  /// WKWebView is deliberately never snapshotted for the tab overview.
+  func makeOverviewThumbnail() -> UIImage? {
+    guard isViewLoaded, !hasLoadedUrl else { return nil }
+    view.layoutIfNeeded()
+    return contentView.emptyStateView.makeOverviewThumbnail()
+  }
+
   func showEmptyState() {
     UIView.animate(withDuration: 0.2) {
       self.contentView.emptyStateView.alpha = 1
