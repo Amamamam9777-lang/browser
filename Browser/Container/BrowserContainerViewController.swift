@@ -270,6 +270,46 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
     contentView.tabsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * (contentView.frame.width + contentView.tabsStackViewSpacing), y: 0), animated: false)
   }
 
+  @discardableResult
+  private func closeTab(at index: Int) -> ([BrowserTabViewController], Int) {
+    guard tabViewControllers.indices.contains(index) else {
+      return (tabViewControllers, currentTabIndex)
+    }
+
+    let previousCurrentIndex = currentTabIndex
+    let closingTab = tabViewControllers.remove(at: index)
+    closingTab.willMove(toParent: nil)
+    contentView.tabsStackView.removeArrangedSubview(closingTab.view)
+    closingTab.view.removeFromSuperview()
+    closingTab.removeFromParent()
+
+    if let addressBar = contentView.addressBars[safe: index] {
+      contentView.addressBarsStackView.removeArrangedSubview(addressBar)
+      addressBar.removeFromSuperview()
+    }
+
+    if tabViewControllers.isEmpty {
+      openNewTab(isHidden: false)
+      currentTabIndex = 0
+    } else if index < previousCurrentIndex {
+      currentTabIndex = previousCurrentIndex - 1
+    } else if index == previousCurrentIndex {
+      currentTabIndex = min(index, tabViewControllers.count - 1)
+    } else {
+      currentTabIndex = previousCurrentIndex
+    }
+
+    updateAddressBarsAfterTabChange()
+    view.layoutIfNeeded()
+    scrollAddressBarToCurrentTab()
+    let pageWidth = contentView.frame.width + contentView.tabsStackViewSpacing
+    contentView.tabsScrollView.setContentOffset(
+      CGPoint(x: CGFloat(currentTabIndex) * pageWidth, y: 0),
+      animated: false
+    )
+    return (tabViewControllers, currentTabIndex)
+  }
+
   private func presentTabsOverview() {
     guard isViewLoaded, view.window != nil,
           tabsOverviewController == nil, !isDismissingTabsOverview else { return }
@@ -296,6 +336,10 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
         self.contentView.tabsScrollView.setContentOffset(CGPoint(x: CGFloat(index) * pageWidth, y: 0), animated: false)
       },
       onNewTab: { [weak self] in self?.createAndSelectNewTab() },
+      onCloseTab: { [weak self] index in
+        guard let self else { return ([], 0) }
+        return self.closeTab(at: index)
+      },
       onSearch: { [weak self] in
         guard let self,
               let addressBar = self.contentView.addressBars[safe: self.currentTabIndex] else { return }
@@ -320,8 +364,17 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
     ])
     overview.didMove(toParent: self)
     setNeedsStatusBarAppearanceUpdate()
-    UIView.animate(withDuration: 0.18) {
+    overview.view.alpha = 0
+    overview.view.transform = CGAffineTransform(scaleX: 0.985, y: 0.985)
+    UIView.animate(
+      withDuration: 0.27,
+      delay: 0,
+      usingSpringWithDamping: 0.92,
+      initialSpringVelocity: 0.18,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
+    ) {
       overview.view.alpha = 1
+      overview.view.transform = .identity
     }
   }
 
@@ -334,36 +387,44 @@ extension BrowserContainerViewController: BrowserToolbarDelegate {
     isDismissingTabsOverview = true
 
     overview.willMove(toParent: nil)
-    UIView.animate(withDuration: 0.14, animations: {
-      overview.view.alpha = 0
-    }, completion: { [weak self] _ in
-      overview.view.removeFromSuperview()
-      overview.removeFromParent()
-      if let self {
-        if self.tabsOverviewController === overview {
-          self.tabsOverviewController = nil
+    UIView.animate(
+      withDuration: 0.19,
+      delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseIn],
+      animations: {
+        overview.view.alpha = 0
+        overview.view.transform = CGAffineTransform(scaleX: 0.99, y: 0.99)
+      },
+      completion: { [weak self] _ in
+        overview.view.removeFromSuperview()
+        overview.removeFromParent()
+        if let self {
+          if self.tabsOverviewController === overview {
+            self.tabsOverviewController = nil
+          }
+          self.isDismissingTabsOverview = false
+          self.setNeedsStatusBarAppearanceUpdate()
         }
-        self.isDismissingTabsOverview = false
-        self.setNeedsStatusBarAppearanceUpdate()
+        completion()
       }
-      completion()
-    })
+    )
   }
 }
 
-/// A full-screen Safari-style tab overview. Thumbnail sizing and placement follow
-/// the supplied reference: narrow portrait previews, labels underneath, and a
-/// compact translucent tab-group control row at the bottom.
+/// A full-screen Safari-style tab overview with a two-column thumbnail grid,
+/// cropped Start Page previews, and the compact translucent bottom tab-group bar.
 private final class BrowserTabsOverviewViewController: UIViewController {
-  private let tabs: [BrowserTabViewController]
-  private let selectedIndex: Int
+  private var tabs: [BrowserTabViewController]
+  private var selectedIndex: Int
   private let closeOverview: (@escaping () -> Void) -> Void
   private let onSelect: (Int) -> Void
   private let onNewTab: () -> Void
+  private let onCloseTab: (Int) -> ([BrowserTabViewController], Int)
   private let onSearch: () -> Void
   private let onMenu: () -> Void
   private let scrollView = UIScrollView()
   private let stack = UIStackView()
+  private let privateBrowsingView = UIView()
   private let gradientLayer = CAGradientLayer()
   private let groupPrivateButton = UIButton(type: .system)
   private let groupStartButton = UIButton(type: .system)
@@ -375,6 +436,7 @@ private final class BrowserTabsOverviewViewController: UIViewController {
     closeOverview: @escaping (@escaping () -> Void) -> Void,
     onSelect: @escaping (Int) -> Void,
     onNewTab: @escaping () -> Void,
+    onCloseTab: @escaping (Int) -> ([BrowserTabViewController], Int),
     onSearch: @escaping () -> Void,
     onMenu: @escaping () -> Void
   ) {
@@ -383,6 +445,7 @@ private final class BrowserTabsOverviewViewController: UIViewController {
     self.closeOverview = closeOverview
     self.onSelect = onSelect
     self.onNewTab = onNewTab
+    self.onCloseTab = onCloseTab
     self.onSearch = onSearch
     self.onMenu = onMenu
     super.init(nibName: nil, bundle: nil)
@@ -395,10 +458,11 @@ private final class BrowserTabsOverviewViewController: UIViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
     overrideUserInterfaceStyle = .dark
-    view.backgroundColor = UIColor(red: 0.035, green: 0.04, blue: 0.055, alpha: 1)
+    view.backgroundColor = UIColor(red: 0.035, green: 0.035, blue: 0.04, alpha: 1)
     buildBackground()
     buildTopControls()
     buildTabCards()
+    buildPrivateBrowsingView()
     buildBottomControls()
   }
 
@@ -409,14 +473,14 @@ private final class BrowserTabsOverviewViewController: UIViewController {
 
   private func buildBackground() {
     gradientLayer.colors = [
-      UIColor(red: 0.075, green: 0.09, blue: 0.15, alpha: 1).cgColor,
-      UIColor(red: 0.055, green: 0.12, blue: 0.14, alpha: 1).cgColor,
-      UIColor(red: 0.045, green: 0.05, blue: 0.065, alpha: 1).cgColor,
-      UIColor(red: 0.035, green: 0.04, blue: 0.055, alpha: 1).cgColor
+      UIColor(red: 0.065, green: 0.06, blue: 0.06, alpha: 1).cgColor,
+      UIColor(red: 0.045, green: 0.045, blue: 0.05, alpha: 1).cgColor,
+      UIColor(red: 0.075, green: 0.085, blue: 0.105, alpha: 1).cgColor,
+      UIColor(red: 0.075, green: 0.085, blue: 0.105, alpha: 1).cgColor
     ]
-    gradientLayer.locations = [0, 0.38, 0.72, 1]
-    gradientLayer.startPoint = CGPoint(x: 0.05, y: 0)
-    gradientLayer.endPoint = CGPoint(x: 0.95, y: 1)
+    gradientLayer.locations = [0, 0.34, 0.78, 1]
+    gradientLayer.startPoint = CGPoint(x: 0.1, y: 0)
+    gradientLayer.endPoint = CGPoint(x: 0.9, y: 1)
     view.layer.insertSublayer(gradientLayer, at: 0)
 
     let vignette = UIView()
@@ -453,7 +517,7 @@ private final class BrowserTabsOverviewViewController: UIViewController {
   private func makeGlassCircle(symbol: String, accessibilityLabel: String, action: Selector) -> UIView {
     let glass = UIVisualEffectView(effect: nil)
     glass.clipsToBounds = true
-    glass.layer.cornerRadius = 27
+    glass.layer.cornerRadius = 28
     glass.layer.cornerCurve = .continuous
     glass.layer.borderWidth = 0.8
     glass.layer.borderColor = UIColor.white.withAlphaComponent(0.11).cgColor
@@ -486,34 +550,127 @@ private final class BrowserTabsOverviewViewController: UIViewController {
     scrollView.showsVerticalScrollIndicator = false
     scrollView.alwaysBounceVertical = true
     scrollView.clipsToBounds = true
+    scrollView.delaysContentTouches = false
     scrollView.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(scrollView)
 
     stack.axis = .vertical
-    stack.alignment = .center
-    stack.spacing = 34
+    stack.alignment = .fill
+    stack.spacing = 23
     stack.translatesAutoresizingMaskIntoConstraints = false
     scrollView.addSubview(stack)
     NSLayoutConstraint.activate([
-      scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 75),
+      scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 70),
       scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
       scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-      scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -104),
-      stack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
-      stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
-      stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
-      stack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
-      stack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor)
+      scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -96),
+      stack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 1),
+      stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 30),
+      stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -30),
+      stack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -8),
+      stack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -60)
     ])
 
-    for index in tabs.indices {
-      let card = makeCard(for: index)
-      stack.addArrangedSubview(card)
-      // Activate this constraint only after the card joins the hierarchy.
-      // Activating it inside makeCard() crashes with NSLayoutAnchor's
-      // _nearestAncestorLayoutItem because the card is not in the scroll view yet.
-      card.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, multiplier: 0.67).isActive = true
+    rebuildTabCards(animated: false)
+  }
+
+  private func rebuildTabCards(animated: Bool) {
+    for oldRow in stack.arrangedSubviews {
+      stack.removeArrangedSubview(oldRow)
+      oldRow.removeFromSuperview()
     }
+
+    guard !tabs.isEmpty else { return }
+    for startIndex in stride(from: 0, to: tabs.count, by: 2) {
+      let row = UIStackView()
+      row.axis = .horizontal
+      row.alignment = .top
+      row.distribution = .fillEqually
+      row.spacing = 30
+      row.translatesAutoresizingMaskIntoConstraints = false
+
+      for index in startIndex..<min(startIndex + 2, tabs.count) {
+        let card = makeCard(for: index)
+        row.addArrangedSubview(card)
+      }
+      if startIndex + 1 >= tabs.count {
+        let spacer = UIView()
+        spacer.isUserInteractionEnabled = false
+        row.addArrangedSubview(spacer)
+      }
+      stack.addArrangedSubview(row)
+    }
+
+    if animated {
+      stack.layoutIfNeeded()
+      for (rowIndex, row) in stack.arrangedSubviews.enumerated() {
+        for (columnIndex, card) in row.subviews.enumerated() {
+          card.alpha = 0
+          card.transform = CGAffineTransform(scaleX: 0.975, y: 0.975)
+          let delay = 0.025 * Double(rowIndex * 2 + columnIndex)
+          UIView.animate(
+            withDuration: 0.22,
+            delay: delay,
+            usingSpringWithDamping: 0.9,
+            initialSpringVelocity: 0.12,
+            options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
+          ) {
+            card.alpha = 1
+            card.transform = .identity
+          }
+        }
+      }
+    }
+  }
+
+  private func buildPrivateBrowsingView() {
+    privateBrowsingView.isHidden = true
+    privateBrowsingView.backgroundColor = .clear
+    privateBrowsingView.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(privateBrowsingView)
+    NSLayoutConstraint.activate([
+      privateBrowsingView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 74),
+      privateBrowsingView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+      privateBrowsingView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+      privateBrowsingView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -96)
+    ])
+
+    let hand = UIImageView(image: UIImage(systemName: "hand.raised.fill"))
+    hand.tintColor = UIColor(white: 0.62, alpha: 1)
+    hand.contentMode = .scaleAspectFit
+    hand.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      hand.widthAnchor.constraint(equalToConstant: 30),
+      hand.heightAnchor.constraint(equalToConstant: 34)
+    ])
+
+    let title = UILabel()
+    title.text = "Private Browsing"
+    title.textColor = UIColor(white: 0.64, alpha: 1)
+    title.font = .systemFont(ofSize: 20, weight: .regular)
+    title.textAlignment = .center
+
+    let message = UILabel()
+    message.text = "Private Browsing adds additional privacy protections for you. After you close a tab, Safari won't remember the pages you visited, your search history or your AutoFill information."
+    message.textColor = UIColor(white: 0.56, alpha: 1)
+    message.font = .systemFont(ofSize: 13, weight: .regular)
+    message.textAlignment = .center
+    message.numberOfLines = 0
+    message.setContentCompressionResistancePriority(.required, for: .vertical)
+
+    let content = UIStackView(arrangedSubviews: [hand, title, message])
+    content.axis = .vertical
+    content.alignment = .center
+    content.spacing = 13
+    content.translatesAutoresizingMaskIntoConstraints = false
+    privateBrowsingView.addSubview(content)
+    NSLayoutConstraint.activate([
+      content.centerXAnchor.constraint(equalTo: privateBrowsingView.centerXAnchor),
+      content.centerYAnchor.constraint(equalTo: privateBrowsingView.centerYAnchor, constant: -12),
+      content.leadingAnchor.constraint(greaterThanOrEqualTo: privateBrowsingView.leadingAnchor, constant: 12),
+      content.trailingAnchor.constraint(lessThanOrEqualTo: privateBrowsingView.trailingAnchor, constant: -12),
+      message.widthAnchor.constraint(equalTo: privateBrowsingView.widthAnchor, multiplier: 0.86)
+    ])
   }
 
   private func makeCard(for index: Int) -> UIView {
@@ -522,141 +679,151 @@ private final class BrowserTabsOverviewViewController: UIViewController {
     item.translatesAutoresizingMaskIntoConstraints = false
 
     let preview = UIView()
-    preview.backgroundColor = UIColor(white: 0.075, alpha: 1)
+    preview.backgroundColor = UIColor(red: 0.075, green: 0.075, blue: 0.08, alpha: 1)
     preview.clipsToBounds = true
-    preview.layer.cornerRadius = 28
+    preview.layer.cornerRadius = 15
     preview.layer.cornerCurve = .continuous
-    preview.layer.borderWidth = 0.7
-    preview.layer.borderColor = UIColor.white.withAlphaComponent(index == selectedIndex ? 0.13 : 0.08).cgColor
+    preview.layer.borderWidth = index == selectedIndex ? 0.9 : 0.65
+    preview.layer.borderColor = UIColor.white.withAlphaComponent(index == selectedIndex ? 0.15 : 0.075).cgColor
     preview.translatesAutoresizingMaskIntoConstraints = false
     item.addSubview(preview)
 
-    // Keep the tab overview independent from WKWebView screenshot APIs.
-    // Some iOS/WebKit combinations crash when takeSnapshot is invoked while a
-    // modal tab overview is being presented. Use a lightweight native preview
-    // instead; selecting a card still returns to the original live WKWebView.
-    let previewContent = UIView()
-    previewContent.translatesAutoresizingMaskIntoConstraints = false
-    previewContent.backgroundColor = UIColor(white: 0.055, alpha: 1)
-    preview.addSubview(previewContent)
-    NSLayoutConstraint.activate([
-      previewContent.topAnchor.constraint(equalTo: preview.topAnchor),
-      previewContent.leadingAnchor.constraint(equalTo: preview.leadingAnchor),
-      previewContent.trailingAnchor.constraint(equalTo: preview.trailingAnchor),
-      previewContent.bottomAnchor.constraint(equalTo: preview.bottomAnchor)
-    ])
-
-    let previewHeader = UIView()
-    previewHeader.backgroundColor = UIColor.white.withAlphaComponent(0.045)
-    previewHeader.translatesAutoresizingMaskIntoConstraints = false
-    previewContent.addSubview(previewHeader)
-
-    let dotStack = UIStackView()
-    dotStack.axis = .horizontal
-    dotStack.spacing = 4
-    dotStack.translatesAutoresizingMaskIntoConstraints = false
-    for color in [UIColor.systemRed, UIColor.systemYellow, UIColor.systemGreen] {
-      let dot = UIView()
-      dot.backgroundColor = color.withAlphaComponent(0.72)
-      dot.layer.cornerRadius = 2.5
-      dot.translatesAutoresizingMaskIntoConstraints = false
-      NSLayoutConstraint.activate([dot.widthAnchor.constraint(equalToConstant: 5), dot.heightAnchor.constraint(equalToConstant: 5)])
-      dotStack.addArrangedSubview(dot)
-    }
-    previewHeader.addSubview(dotStack)
-
-    let pageTitle = UILabel()
-    let pageHost = tab.hasLoadedUrl ? (tab.currentURL?.host ?? "Webpage") : "Start Page"
-    pageTitle.text = pageHost
-    pageTitle.font = .systemFont(ofSize: 10, weight: .semibold)
-    pageTitle.textColor = UIColor(white: 0.88, alpha: 1)
-    pageTitle.lineBreakMode = .byTruncatingTail
-    pageTitle.textAlignment = .center
-    pageTitle.translatesAutoresizingMaskIntoConstraints = false
-    previewContent.addSubview(pageTitle)
-
-    let pageSymbol = UIImageView(image: UIImage(systemName: tab.hasLoadedUrl ? "globe" : "safari.fill"))
-    pageSymbol.tintColor = UIColor(white: 0.82, alpha: 1)
-    pageSymbol.contentMode = .scaleAspectFit
-    pageSymbol.translatesAutoresizingMaskIntoConstraints = false
-    previewContent.addSubview(pageSymbol)
-
-    let previewLines = UIStackView()
-    previewLines.axis = .vertical
-    previewLines.alignment = .leading
-    previewLines.spacing = 7
-    previewLines.translatesAutoresizingMaskIntoConstraints = false
-    previewContent.addSubview(previewLines)
-    for i in 0..<6 {
-      let line = UIView()
-      line.backgroundColor = UIColor.white.withAlphaComponent(i == 0 ? 0.16 : 0.075)
-      line.layer.cornerRadius = 2
-      line.translatesAutoresizingMaskIntoConstraints = false
-      line.heightAnchor.constraint(equalToConstant: i == 0 ? 7 : 4).isActive = true
-      previewLines.addArrangedSubview(line)
-      line.widthAnchor.constraint(equalTo: previewLines.widthAnchor, multiplier: i == 2 || i == 5 ? 0.62 : 0.9).isActive = true
+    if let thumbnail = tab.makeOverviewThumbnail() {
+      let imageView = UIImageView(image: thumbnail)
+      imageView.contentMode = .scaleAspectFill
+      imageView.clipsToBounds = true
+      imageView.backgroundColor = UIColor(white: 0.075, alpha: 1)
+      imageView.translatesAutoresizingMaskIntoConstraints = false
+      preview.addSubview(imageView)
+      NSLayoutConstraint.activate([
+        imageView.topAnchor.constraint(equalTo: preview.topAnchor),
+        imageView.leadingAnchor.constraint(equalTo: preview.leadingAnchor),
+        imageView.trailingAnchor.constraint(equalTo: preview.trailingAnchor),
+        imageView.bottomAnchor.constraint(equalTo: preview.bottomAnchor)
+      ])
+    } else {
+      buildFallbackPagePreview(in: preview, tab: tab)
     }
 
-    NSLayoutConstraint.activate([
-      preview.topAnchor.constraint(equalTo: item.topAnchor),
-      preview.leadingAnchor.constraint(equalTo: item.leadingAnchor),
-      preview.trailingAnchor.constraint(equalTo: item.trailingAnchor),
-      preview.heightAnchor.constraint(equalTo: preview.widthAnchor, multiplier: 1.28),
-      previewHeader.topAnchor.constraint(equalTo: previewContent.topAnchor),
-      previewHeader.leadingAnchor.constraint(equalTo: previewContent.leadingAnchor),
-      previewHeader.trailingAnchor.constraint(equalTo: previewContent.trailingAnchor),
-      previewHeader.heightAnchor.constraint(equalToConstant: 22),
-      dotStack.leadingAnchor.constraint(equalTo: previewHeader.leadingAnchor, constant: 10),
-      dotStack.centerYAnchor.constraint(equalTo: previewHeader.centerYAnchor),
-      pageTitle.centerXAnchor.constraint(equalTo: previewContent.centerXAnchor),
-      pageTitle.topAnchor.constraint(equalTo: previewHeader.bottomAnchor, constant: 12),
-      pageTitle.leadingAnchor.constraint(greaterThanOrEqualTo: previewContent.leadingAnchor, constant: 7),
-      pageTitle.trailingAnchor.constraint(lessThanOrEqualTo: previewContent.trailingAnchor, constant: -7),
-      pageSymbol.centerXAnchor.constraint(equalTo: previewContent.centerXAnchor),
-      pageSymbol.topAnchor.constraint(equalTo: pageTitle.bottomAnchor, constant: 15),
-      pageSymbol.widthAnchor.constraint(equalToConstant: 24),
-      pageSymbol.heightAnchor.constraint(equalToConstant: 24),
-      previewLines.topAnchor.constraint(equalTo: pageSymbol.bottomAnchor, constant: 16),
-      previewLines.leadingAnchor.constraint(equalTo: previewContent.leadingAnchor, constant: 12),
-      previewLines.trailingAnchor.constraint(equalTo: previewContent.trailingAnchor, constant: -12)
-    ])
-
-    let star = UIImageView(image: UIImage(systemName: "star.fill"))
-    star.tintColor = UIColor(white: 0.68, alpha: 1)
-    star.contentMode = .scaleAspectFit
-    star.translatesAutoresizingMaskIntoConstraints = false
     let title = UILabel()
     title.text = tab.hasLoadedUrl ? (tab.currentURL?.host ?? "Webpage") : "Start Page"
     title.textColor = UIColor(white: 0.96, alpha: 1)
-    title.font = .systemFont(ofSize: 14, weight: .medium)
+    title.font = .systemFont(ofSize: 13, weight: .medium)
     title.lineBreakMode = .byTruncatingTail
+    title.textAlignment = .center
+    title.translatesAutoresizingMaskIntoConstraints = false
+
+    let star = UIImageView(image: UIImage(systemName: "star.fill"))
+    star.tintColor = UIColor(white: 0.7, alpha: 1)
+    star.contentMode = .scaleAspectFit
+    star.translatesAutoresizingMaskIntoConstraints = false
     let titleRow = UIStackView(arrangedSubviews: [star, title])
     titleRow.axis = .horizontal
     titleRow.alignment = .center
-    titleRow.spacing = 9
+    titleRow.spacing = 7
     titleRow.translatesAutoresizingMaskIntoConstraints = false
     item.addSubview(titleRow)
-    NSLayoutConstraint.activate([
-      star.widthAnchor.constraint(equalToConstant: 14),
-      star.heightAnchor.constraint(equalToConstant: 14),
-      titleRow.topAnchor.constraint(equalTo: preview.bottomAnchor, constant: 10),
-      titleRow.centerXAnchor.constraint(equalTo: item.centerXAnchor),
-      titleRow.bottomAnchor.constraint(equalTo: item.bottomAnchor, constant: -2)
-    ])
 
+    let closeButton = UIButton(type: .system)
+    closeButton.setImage(UIImage(systemName: "xmark.circle.fill"), for: .normal)
+    closeButton.tintColor = UIColor(white: 0.66, alpha: 1)
+    closeButton.backgroundColor = UIColor.black.withAlphaComponent(0.22)
+    closeButton.layer.cornerRadius = 10
+    closeButton.accessibilityLabel = "Close tab"
+    closeButton.tag = index
+    closeButton.addTarget(self, action: #selector(closeCardTapped(_:)), for: .touchUpInside)
+    closeButton.translatesAutoresizingMaskIntoConstraints = false
+    preview.addSubview(closeButton)
+
+    // The card remains a single large tap target, with the small close control above it.
     let tap = UIControl()
     tap.backgroundColor = .clear
     tap.translatesAutoresizingMaskIntoConstraints = false
     tap.tag = index
     tap.addTarget(self, action: #selector(cardTapped(_:)), for: .touchUpInside)
-    item.addSubview(tap)
+    preview.addSubview(tap)
+    preview.bringSubviewToFront(tap)
+
     NSLayoutConstraint.activate([
+      preview.topAnchor.constraint(equalTo: item.topAnchor),
+      preview.leadingAnchor.constraint(equalTo: item.leadingAnchor),
+      preview.trailingAnchor.constraint(equalTo: item.trailingAnchor),
+      preview.heightAnchor.constraint(equalTo: preview.widthAnchor, multiplier: 1.52),
+      closeButton.topAnchor.constraint(equalTo: preview.topAnchor, constant: 4),
+      closeButton.trailingAnchor.constraint(equalTo: preview.trailingAnchor, constant: -4),
+      closeButton.widthAnchor.constraint(equalToConstant: 20),
+      closeButton.heightAnchor.constraint(equalToConstant: 20),
       tap.topAnchor.constraint(equalTo: preview.topAnchor),
       tap.leadingAnchor.constraint(equalTo: preview.leadingAnchor),
       tap.trailingAnchor.constraint(equalTo: preview.trailingAnchor),
-      tap.bottomAnchor.constraint(equalTo: preview.bottomAnchor)
+      tap.bottomAnchor.constraint(equalTo: preview.bottomAnchor),
+      star.widthAnchor.constraint(equalToConstant: 13),
+      star.heightAnchor.constraint(equalToConstant: 13),
+      titleRow.topAnchor.constraint(equalTo: preview.bottomAnchor, constant: 7),
+      titleRow.centerXAnchor.constraint(equalTo: item.centerXAnchor),
+      titleRow.leadingAnchor.constraint(greaterThanOrEqualTo: item.leadingAnchor, constant: 2),
+      titleRow.trailingAnchor.constraint(lessThanOrEqualTo: item.trailingAnchor, constant: -2),
+      titleRow.bottomAnchor.constraint(equalTo: item.bottomAnchor, constant: -1)
     ])
+    // Keep the close control above the card's selection surface.
+    preview.bringSubviewToFront(tap)
+    preview.bringSubviewToFront(closeButton)
     return item
+  }
+
+  private func buildFallbackPagePreview(in preview: UIView, tab: BrowserTabViewController) {
+    let header = UIView()
+    header.backgroundColor = UIColor.white.withAlphaComponent(0.055)
+    header.translatesAutoresizingMaskIntoConstraints = false
+    preview.addSubview(header)
+
+    let pageTitle = UILabel()
+    pageTitle.text = tab.hasLoadedUrl ? (tab.currentURL?.host ?? "Webpage") : "Start Page"
+    pageTitle.font = .systemFont(ofSize: 9, weight: .semibold)
+    pageTitle.textColor = UIColor(white: 0.9, alpha: 1)
+    pageTitle.textAlignment = .center
+    pageTitle.lineBreakMode = .byTruncatingTail
+    pageTitle.translatesAutoresizingMaskIntoConstraints = false
+    preview.addSubview(pageTitle)
+
+    let globe = UIImageView(image: UIImage(systemName: tab.hasLoadedUrl ? "globe" : "safari.fill"))
+    globe.tintColor = UIColor(white: 0.84, alpha: 1)
+    globe.contentMode = .scaleAspectFit
+    globe.translatesAutoresizingMaskIntoConstraints = false
+    preview.addSubview(globe)
+
+    let lines = UIStackView()
+    lines.axis = .vertical
+    lines.alignment = .fill
+    lines.spacing = 4
+    lines.translatesAutoresizingMaskIntoConstraints = false
+    preview.addSubview(lines)
+    for i in 0..<4 {
+      let line = UIView()
+      line.backgroundColor = UIColor.white.withAlphaComponent(i == 0 ? 0.16 : 0.08)
+      line.layer.cornerRadius = 2
+      line.translatesAutoresizingMaskIntoConstraints = false
+      line.heightAnchor.constraint(equalToConstant: i == 0 ? 5 : 3).isActive = true
+      lines.addArrangedSubview(line)
+      line.widthAnchor.constraint(equalTo: lines.widthAnchor, multiplier: i == 2 ? 0.62 : 0.92).isActive = true
+    }
+    NSLayoutConstraint.activate([
+      header.topAnchor.constraint(equalTo: preview.topAnchor),
+      header.leadingAnchor.constraint(equalTo: preview.leadingAnchor),
+      header.trailingAnchor.constraint(equalTo: preview.trailingAnchor),
+      header.heightAnchor.constraint(equalToConstant: 13),
+      pageTitle.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
+      pageTitle.centerXAnchor.constraint(equalTo: preview.centerXAnchor),
+      pageTitle.leadingAnchor.constraint(greaterThanOrEqualTo: preview.leadingAnchor, constant: 5),
+      pageTitle.trailingAnchor.constraint(lessThanOrEqualTo: preview.trailingAnchor, constant: -5),
+      globe.topAnchor.constraint(equalTo: pageTitle.bottomAnchor, constant: 9),
+      globe.centerXAnchor.constraint(equalTo: preview.centerXAnchor),
+      globe.widthAnchor.constraint(equalToConstant: 22),
+      globe.heightAnchor.constraint(equalToConstant: 22),
+      lines.topAnchor.constraint(equalTo: globe.bottomAnchor, constant: 10),
+      lines.leadingAnchor.constraint(equalTo: preview.leadingAnchor, constant: 10),
+      lines.trailingAnchor.constraint(equalTo: preview.trailingAnchor, constant: -10)
+    ])
   }
 
   private func buildBottomControls() {
@@ -687,7 +854,7 @@ private final class BrowserTabsOverviewViewController: UIViewController {
     groupPrivateButton.layer.cornerRadius = 26
     groupPrivateButton.addTarget(self, action: #selector(privateGroupTapped), for: .touchUpInside)
 
-    groupStartButton.setTitle("Start…", for: .normal)
+    groupStartButton.setTitle("\(tabs.count) Tabs", for: .normal)
     groupStartButton.setTitleColor(.white, for: .normal)
     groupStartButton.titleLabel?.font = .systemFont(ofSize: 15, weight: .semibold)
     groupStartButton.backgroundColor = UIColor(white: 0.28, alpha: 1)
@@ -751,6 +918,28 @@ private final class BrowserTabsOverviewViewController: UIViewController {
     closeOverview { action() }
   }
 
+  @objc private func closeCardTapped(_ sender: UIButton) {
+    let index = sender.tag
+    guard tabs.indices.contains(index), let card = sender.superview?.superview else { return }
+    UIView.animate(
+      withDuration: 0.16,
+      delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseIn],
+      animations: {
+        card.alpha = 0
+        card.transform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+      },
+      completion: { [weak self] _ in
+        guard let self else { return }
+        let newState = self.onCloseTab(index)
+        self.tabs = newState.0
+        self.selectedIndex = newState.1
+        self.groupStartButton.setTitle("\(self.tabs.count) Tabs", for: .normal)
+        self.rebuildTabCards(animated: true)
+      }
+    )
+  }
+
   @objc private func doneTapped() {
     let index = selectedIndex
     let action = onSelect
@@ -769,12 +958,36 @@ private final class BrowserTabsOverviewViewController: UIViewController {
 
   @objc private func privateGroupTapped() {
     selectedGroupIsStartPage = false
+    transitionToPrivateBrowsing(true)
     updateGroupSelection()
   }
 
   @objc private func startGroupTapped() {
     selectedGroupIsStartPage = true
+    transitionToPrivateBrowsing(false)
     updateGroupSelection()
+  }
+
+  private func transitionToPrivateBrowsing(_ showPrivate: Bool) {
+    let outgoing = showPrivate ? scrollView : privateBrowsingView
+    let incoming = showPrivate ? privateBrowsingView : scrollView
+    guard incoming.isHidden else { return }
+
+    incoming.alpha = 0
+    incoming.isHidden = false
+    UIView.animate(
+      withDuration: 0.2,
+      delay: 0,
+      options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut],
+      animations: {
+        outgoing.alpha = 0
+        incoming.alpha = 1
+      },
+      completion: { _ in
+        outgoing.isHidden = true
+        outgoing.alpha = 1
+      }
+    )
   }
 }
 
