@@ -772,11 +772,7 @@ private final class BrowserTabsOverviewViewController: UIViewController {
   }
 
   private func buildFallbackPagePreview(in preview: UIView, tab: BrowserTabViewController) {
-    let header = UIView()
-    header.backgroundColor = UIColor.white.withAlphaComponent(0.055)
-    header.translatesAutoresizingMaskIntoConstraints = false
-    preview.addSubview(header)
-
+    // Minimal fallback thumbnail: no top strip and no compass/globe emblem.
     let pageTitle = UILabel()
     pageTitle.text = tab.hasLoadedUrl ? (tab.currentURL?.host ?? "Webpage") : "Start Page"
     pageTitle.font = .systemFont(ofSize: 9, weight: .semibold)
@@ -785,12 +781,6 @@ private final class BrowserTabsOverviewViewController: UIViewController {
     pageTitle.lineBreakMode = .byTruncatingTail
     pageTitle.translatesAutoresizingMaskIntoConstraints = false
     preview.addSubview(pageTitle)
-
-    let globe = UIImageView(image: UIImage(systemName: tab.hasLoadedUrl ? "globe" : "safari.fill"))
-    globe.tintColor = UIColor(white: 0.84, alpha: 1)
-    globe.contentMode = .scaleAspectFit
-    globe.translatesAutoresizingMaskIntoConstraints = false
-    preview.addSubview(globe)
 
     let lines = UIStackView()
     lines.axis = .vertical
@@ -808,19 +798,11 @@ private final class BrowserTabsOverviewViewController: UIViewController {
       line.widthAnchor.constraint(equalTo: lines.widthAnchor, multiplier: i == 2 ? 0.62 : 0.92).isActive = true
     }
     NSLayoutConstraint.activate([
-      header.topAnchor.constraint(equalTo: preview.topAnchor),
-      header.leadingAnchor.constraint(equalTo: preview.leadingAnchor),
-      header.trailingAnchor.constraint(equalTo: preview.trailingAnchor),
-      header.heightAnchor.constraint(equalToConstant: 13),
-      pageTitle.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 10),
+      pageTitle.topAnchor.constraint(equalTo: preview.topAnchor, constant: 14),
       pageTitle.centerXAnchor.constraint(equalTo: preview.centerXAnchor),
       pageTitle.leadingAnchor.constraint(greaterThanOrEqualTo: preview.leadingAnchor, constant: 5),
       pageTitle.trailingAnchor.constraint(lessThanOrEqualTo: preview.trailingAnchor, constant: -5),
-      globe.topAnchor.constraint(equalTo: pageTitle.bottomAnchor, constant: 9),
-      globe.centerXAnchor.constraint(equalTo: preview.centerXAnchor),
-      globe.widthAnchor.constraint(equalToConstant: 22),
-      globe.heightAnchor.constraint(equalToConstant: 22),
-      lines.topAnchor.constraint(equalTo: globe.bottomAnchor, constant: 10),
+      lines.topAnchor.constraint(equalTo: pageTitle.bottomAnchor, constant: 18),
       lines.leadingAnchor.constraint(equalTo: preview.leadingAnchor, constant: 10),
       lines.trailingAnchor.constraint(equalTo: preview.trailingAnchor, constant: -10)
     ])
